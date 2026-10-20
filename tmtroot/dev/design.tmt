@@ -1,0 +1,60 @@
+=[ tandr 構想メモ ]
+
+状態: 構想段階。コードなし。2026-10-16 の議論の記録。決定事項ではなく叩き台。
+
+==[ 位置づけ ]
+
+tomet 専用の、人間が読める構造検索・書き換え言語(とその CLI)。
+regex が苦手な `()[]{}` のネスト・対応を、tomet の構文木の上で扱う。
+
+- 汎用のテキスト用ではない(comby / ast-grep / semgrep が既にある)。
+- 独立したレポにする。tomet に依存し、tomet は tandr を知らない(git 依存。tomet は crates.io に公開しない)。
+- tandr が持つもの: パターン/ルールの言語、そのパーサ、CLI。
+- マッチと書き換えの実体は tomet 側(`tomet-search::structural`, `tomet-transform::structural`, `tomet-edit`)。
+- 足りない部品が見つかったら、tandr 固有でなければ tomet 側に汎用機能として足す。
+
+==[ 需要の見立て(正直なところ) ]
+
+- 想定用途: マイグレーション、vault の一括整理、構造検索、validator の autofix、コンバータの後処理、エディタの構造置換。
+- ただし**実際に「一括で直したかった」例は今のところほぼない**。挙がったのは `@meta{type: xxx}` → `@kind(xxx)` の一件だけ。
+- この変換は `tomet-transform::directive::promote_meta_type_to_kind` として既にハードコードされている。
+- つまり需要は仮説。実例が溜まるまで、言語を大きく作り込まない。
+- 実例を集める場所: tomet-corpus、自分の vault、仕様変更のたび。
+
+==[ 現状の構造検索(tomet 側) ]
+
+コードで確認した事実(`tomet-search/src/structural.rs`, `tomet-transform/src/structural.rs`)。
+
+- 検索 `StructuralQuery`: タグ名、キーの有無、args/value の部分文字列、の 3 つだけ。
+- 書き換え `StructuralAction`: `RenameTag` / `RenameKey` / `ReplaceValue` の 3 種。
+- できない: `(args)` `[content]` `{value}` の形の指定、入れ子・親子、キャプチャと再利用、見出し/リスト/セクション/`#(id)`/`:connect` の指定。
+- tandr が足す価値があるのはこの部分。
+
+==[ 構文の叩き台 ]
+
+パターンは「tomet の書き方に穴を開けたもの」。
+
+```
+# 検索
+@task{status: "draft"}
+
+# 書き換え: link に rel を足す
+@link(target: ?t)[?text]   =>   @link(target: ?t, rel: "external")[?text]
+
+# 書き換え: @meta.type の昇格
+@meta{type: ?v, ...?rest}  =>   @kind(?v)  @meta{...?rest}
+
+# 入れ子: 見出し配下の @note だけ
+=[ ?title ]  >>  @note[?body]
+```
+
+- 穴は `?名前`。同名は同じものを指し、`=>` の右で再利用。残りは `...`。
+- 値の文字列の中だけ `/regex/` を許す案。regex の import/export はここに限れば自然(括弧のネストが絡まないので export も成立する)。
+
+==[ 未決事項 ]
+
+-. 穴の記号: `$t` は tomet の `${...}` 補間と紛らわしい。`?t` を推す。
+-. 入れ子: 親子(`>`)と子孫(`>>`)を分けるか。tomet の入れ子は `[content]` と `{value}` の 2 系統ある。
+-. ルールの置き場: 1 行 CLI と、配布するマイグレーションファイル。ルールファイルを tomet 文書として書く案。
+-. **書き換えの土台**(最重要): `tomet-transform` は AST(`Document`)を直接書き換える。往復バイト一致の保証 (`export_doc(&import_source(src)) == src`) があるのは `tomet-edit` の CST 側。「無関係な箇所を一切動かさない」を守るなら CST(`EditOp`)に載せる必要がある。AST 書き換え後の出力が整形器を通るかは未確認。
+-. 実例が乏しい中で、どこまで作るか(「需要の見立て」を参照)。

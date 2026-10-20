@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = [
+  "app",
+  "crates/tandr-core",
+]
+
+default-members = ["app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+tandr-core = { path = "crates/tandr-core" }
+tandr-cli = { path = "app" }
+
+#= Tomet / Motem ecosystem
+tove = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-ast = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-cst = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-parser = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-edit = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-semantics = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-tree = { git = "https://github.com/tomet-lang/tomet.git" }
+
+#= Crates.io
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+walkdir = "2"
+
+[patch."https://github.com/tomet-lang/tomet.git"]
+tove = { path = "../tomet/crates/tove" }
+tomet-ast = { path = "../tomet/crates/tomet-syntax-ast" }
+tomet-cst = { path = "../tomet/crates/tomet-syntax-cst" }
+tomet-parser = { path = "../tomet/crates/tomet-syntax-parser" }
+tomet-edit = { path = "../tomet/crates/tomet-edit" }
+tomet-semantics = { path = "../tomet/crates/tomet-semantics" }
+tomet-tree = { path = "../tomet/crates/tomet-syntax-tree" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,0 +1,18 @@
+[package]
+name = "tandr-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tove = { workspace = true }
+tomet-ast = { workspace = true }
+tomet-cst = { workspace = true }
+tomet-parser = { workspace = true }
+tomet-edit = { workspace = true }
+tomet-semantics = { workspace = true }
+tomet-tree = { workspace = true }
+
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

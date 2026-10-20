@@ -1,0 +1,8 @@
+@meta{ type: "article", title: "Hello Tandr", author: "tefla" }
+
+=[ Introduction ]
+
+Welcome to the new world. Check @link(url: "https://example.com")[ the link ] for more details.
+
+- regular item
+- another item

@@ -1,0 +1,15 @@
+[package]
+name = "tandr-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "tandr"
+path = "src/main.rs"
+
+[dependencies]
+tandr-core = { workspace = true }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
