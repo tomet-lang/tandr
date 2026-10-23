@@ -1,11 +1,18 @@
 //! Parser and AST for tandr structural patterns ("tomet with holes").
 //!
 //! Examples:
-//! - `@meta{ type: ?kind, ...?rest }`
-//! - `@link(url: ?u)[ ?text ]`
-//! - `@task(?status)[ ?body ]`
+//! - `@meta{ type: ?(kind), ?(...rest) }`
+//! - `@link(url: ?(u))[ ?(text) ]`
+//! - `@task(?(status))[ ?(body) ]`
+//! - `^(?(id))` and `^footnote(?(id))`, the caret elements
+//!
+//! A hole is `?(name)`, `?()` (anything, bound to nothing) or `?(...name)`
+//! (the rest of a group); see [`crate::hole`].
 
+use std::collections::BTreeSet;
 use std::fmt;
+
+use crate::hole::{Hole, parse_hole};
 
 /// A structural pattern to match against tomet documents.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,10 +21,21 @@ pub enum Pattern {
     Element(ElementPattern),
 }
 
+/// Which sigil an element pattern is written with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SigilKind {
+    /// `@name`
+    #[default]
+    At,
+    /// `^` or `^name`, a caret reference
+    Caret,
+}
+
 /// Pattern for matching an element.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ElementPattern {
-    /// Tag name matcher (e.g. `meta`, `link`, or `?tag`).
+    pub sigil: SigilKind,
+    /// Tag name matcher (e.g. `meta`, `link`, or `?(tag)`).
     pub tag: TagPattern,
     /// ID slot matcher `#(id)` or `#id`.
     pub id: Option<SlotPattern>,
@@ -33,6 +51,8 @@ pub struct ElementPattern {
 pub enum TagPattern {
     #[default]
     Any,
+    /// A caret with no name, `^(...)`.
+    Unnamed,
     Exact(String),
     Var(String),
 }
@@ -75,8 +95,8 @@ pub enum ValuePattern {
 impl fmt::Display for ValuePattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ValuePattern::Any => write!(f, "_"),
-            ValuePattern::Var(v) => write!(f, "?{v}"),
+            ValuePattern::Any => write!(f, "?()"),
+            ValuePattern::Var(v) => write!(f, "?({v})"),
             ValuePattern::String(s) => write!(f, "\"{s}\""),
             ValuePattern::Number(n) => write!(f, "{n}"),
             ValuePattern::Bool(b) => write!(f, "{b}"),
@@ -89,6 +109,41 @@ impl fmt::Display for ValuePattern {
 pub fn parse_pattern(src: &str) -> Result<Pattern, String> {
     let mut parser = PatternParser::new(src);
     parser.parse()
+}
+
+impl Pattern {
+    /// The names this pattern binds, for checking a template against it.
+    pub fn bound_names(&self) -> BTreeSet<String> {
+        let mut names = BTreeSet::new();
+        let Pattern::Element(el) = self;
+        if let TagPattern::Var(v) = &el.tag {
+            names.insert(v.clone());
+        }
+        if let Some(SlotPattern::Var(v)) = &el.id {
+            names.insert(v.clone());
+        }
+        if let Some(SlotPattern::Var(v)) = &el.content {
+            names.insert(v.clone());
+        }
+        if let Some(args) = &el.args {
+            for entry in &args.entries {
+                let (ArgEntryPattern::Positional(v) | ArgEntryPattern::Named(_, v)) = entry;
+                if let ValuePattern::Var(n) = v {
+                    names.insert(n.clone());
+                }
+            }
+            names.extend(args.rest_var.clone());
+        }
+        if let Some(data) = &el.data {
+            for (_, v) in &data.fields {
+                if let ValuePattern::Var(n) = v {
+                    names.insert(n.clone());
+                }
+            }
+            names.extend(data.rest_var.clone());
+        }
+        names
+    }
 }
 
 struct PatternParser<'a> {
@@ -108,7 +163,7 @@ impl<'a> PatternParser<'a> {
 
     fn parse(&mut self) -> Result<Pattern, String> {
         self.skip_ws();
-        if self.peek() == Some('@') {
+        if matches!(self.peek(), Some('@') | Some('^')) {
             let el = self.parse_element()?;
             self.skip_ws();
             if self.pos < self.chars.len() {
@@ -121,17 +176,29 @@ impl<'a> PatternParser<'a> {
             Ok(Pattern::Element(el))
         } else {
             Err(format!(
-                "Pattern must currently start with '@' (got {:?})",
+                "Pattern must start with '@' or '^' (got {:?})",
                 self.peek()
             ))
         }
     }
 
     fn parse_element(&mut self) -> Result<ElementPattern, String> {
-        self.expect('@')?;
-        let tag = self.parse_tag()?;
+        let sigil = if self.peek() == Some('^') {
+            self.bump();
+            SigilKind::Caret
+        } else {
+            self.expect('@')?;
+            SigilKind::At
+        };
+        let tag = match sigil {
+            SigilKind::At => self.parse_tag()?,
+            // `^(...)` has no name; `^name(...)` and `^?(t)(...)` do
+            SigilKind::Caret if self.peek() == Some('(') => TagPattern::Unnamed,
+            SigilKind::Caret => self.parse_tag()?,
+        };
 
         let mut el = ElementPattern {
+            sigil,
             tag,
             ..Default::default()
         };
@@ -171,18 +238,42 @@ impl<'a> PatternParser<'a> {
         Ok(el)
     }
 
+    /// A hole at the cursor. `?` must be the next character.
+    fn hole(&mut self) -> Result<Hole, String> {
+        let (hole, next) = parse_hole(&self.chars, self.pos)?;
+        self.pos = next;
+        Ok(hole)
+    }
+
+    /// A hole where a single thing goes: a rest hole is not one.
+    fn single_hole(&mut self) -> Result<Option<String>, String> {
+        let hole = self.hole()?;
+        if hole.rest {
+            return Err(
+                "?(...name) is the rest of a group; it cannot stand for one thing".to_string(),
+            );
+        }
+        Ok(hole.name)
+    }
+
+    /// An identifier, but not the old wildcard `_`.
+    fn eat_name(&mut self) -> Result<String, String> {
+        let ident = self.eat_ident()?;
+        if ident == "_" {
+            return Err("write ?() for a wildcard; a bare _ is no longer one".to_string());
+        }
+        Ok(ident)
+    }
+
     fn parse_tag(&mut self) -> Result<TagPattern, String> {
         self.skip_ws();
         if self.peek() == Some('?') {
-            self.bump();
-            let name = self.eat_ident()?;
-            Ok(TagPattern::Var(name))
-        } else if self.peek() == Some('_') {
-            self.bump();
-            Ok(TagPattern::Any)
+            Ok(match self.single_hole()? {
+                Some(name) => TagPattern::Var(name),
+                None => TagPattern::Any,
+            })
         } else {
-            let name = self.eat_ident()?;
-            Ok(TagPattern::Exact(name))
+            Ok(TagPattern::Exact(self.eat_name()?))
         }
     }
 
@@ -211,17 +302,25 @@ impl<'a> PatternParser<'a> {
         while self.peek() != Some(')') && self.pos < self.chars.len() {
             self.skip_ws();
             if self.starts_with("...") {
-                self.pos += 3;
-                self.skip_ws();
-                if self.peek() == Some('?') {
-                    self.bump();
+                return Err(
+                    "the rest of a group is written ?(...name); ...?name is gone".to_string(),
+                );
+            }
+            if self.peek() == Some('?') {
+                let (hole, next) = parse_hole(&self.chars, self.pos)?;
+                if hole.rest {
+                    let Some(name) = hole.name else {
+                        return Err("name the rest, ?(...name): an anonymous rest binds nothing"
+                            .to_string());
+                    };
+                    self.pos = next;
+                    rest_var = Some(name);
+                    self.skip_ws();
+                    if self.peek() == Some(',') {
+                        self.bump();
+                    }
+                    continue;
                 }
-                rest_var = Some(self.eat_ident()?);
-                self.skip_ws();
-                if self.peek() == Some(',') {
-                    self.bump();
-                }
-                continue;
             }
 
             // Check if key: value or positional value
@@ -264,17 +363,25 @@ impl<'a> PatternParser<'a> {
         while self.peek() != Some('}') && self.pos < self.chars.len() {
             self.skip_ws();
             if self.starts_with("...") {
-                self.pos += 3;
-                self.skip_ws();
-                if self.peek() == Some('?') {
-                    self.bump();
+                return Err(
+                    "the rest of a group is written ?(...name); ...?name is gone".to_string(),
+                );
+            }
+            if self.peek() == Some('?') {
+                let (hole, next) = parse_hole(&self.chars, self.pos)?;
+                if hole.rest {
+                    let Some(name) = hole.name else {
+                        return Err("name the rest, ?(...name): an anonymous rest binds nothing"
+                            .to_string());
+                    };
+                    self.pos = next;
+                    rest_var = Some(name);
+                    self.skip_ws();
+                    if self.peek() == Some(',') {
+                        self.bump();
+                    }
+                    continue;
                 }
-                rest_var = Some(self.eat_ident()?);
-                self.skip_ws();
-                if self.peek() == Some(',') {
-                    self.bump();
-                }
-                continue;
             }
 
             let key = self.eat_ident()?;
@@ -305,14 +412,14 @@ impl<'a> PatternParser<'a> {
     fn parse_slot_content(&mut self, closing: char) -> Result<SlotPattern, String> {
         self.skip_ws();
         if self.peek() == Some('?') {
-            self.bump();
-            let name = self.eat_ident()?;
+            let slot = match self.single_hole()? {
+                Some(name) => SlotPattern::Var(name),
+                None => SlotPattern::Any,
+            };
             self.skip_ws();
-            Ok(SlotPattern::Var(name))
+            Ok(slot)
         } else if self.peek() == Some('_') {
-            self.bump();
-            self.skip_ws();
-            Ok(SlotPattern::Any)
+            Err("write ?() for a wildcard; a bare _ is no longer one".to_string())
         } else {
             // Read until closing bracket
             let start = self.pos;
@@ -330,15 +437,10 @@ impl<'a> PatternParser<'a> {
     fn parse_value(&mut self) -> Result<ValuePattern, String> {
         self.skip_ws();
         match self.peek() {
-            Some('?') => {
-                self.bump();
-                let name = self.eat_ident()?;
-                Ok(ValuePattern::Var(name))
-            }
-            Some('_') => {
-                self.bump();
-                Ok(ValuePattern::Any)
-            }
+            Some('?') => Ok(match self.single_hole()? {
+                Some(name) => ValuePattern::Var(name),
+                None => ValuePattern::Any,
+            }),
             Some('"') | Some('\'') => {
                 let quote = self.bump().unwrap();
                 let mut s = String::new();
@@ -366,11 +468,13 @@ impl<'a> PatternParser<'a> {
                         break;
                     }
                 }
-                let n: i64 = num_str.parse().map_err(|e| format!("Invalid integer: {e}"))?;
+                let n: i64 = num_str
+                    .parse()
+                    .map_err(|e| format!("Invalid integer: {e}"))?;
                 Ok(ValuePattern::Number(n))
             }
             _ => {
-                let ident = self.eat_ident()?;
+                let ident = self.eat_name()?;
                 match ident.as_str() {
                     "true" => Ok(ValuePattern::Bool(true)),
                     "false" => Ok(ValuePattern::Bool(false)),
@@ -450,7 +554,7 @@ mod tests {
 
     #[test]
     fn parses_meta_pattern_with_rest() {
-        let p = parse_pattern("@meta{ type: ?kind, ...?rest }").unwrap();
+        let p = parse_pattern("@meta{ type: ?(kind), ?(...rest) }").unwrap();
         match p {
             Pattern::Element(el) => {
                 assert_eq!(el.tag, TagPattern::Exact("meta".to_string()));
@@ -465,7 +569,7 @@ mod tests {
 
     #[test]
     fn parses_link_pattern_with_args_and_content() {
-        let p = parse_pattern("@link(url: ?u)[ ?text ]").unwrap();
+        let p = parse_pattern("@link(url: ?(u))[ ?(text) ]").unwrap();
         match p {
             Pattern::Element(el) => {
                 assert_eq!(el.tag, TagPattern::Exact("link".to_string()));
@@ -485,16 +589,86 @@ mod tests {
 
     #[test]
     fn parses_positional_args_and_id() {
-        let p = parse_pattern("@task#(task-1)(?status)[ ?body ]").unwrap();
+        let p = parse_pattern("@task#(task-1)(?(status))[ ?(body) ]").unwrap();
         match p {
             Pattern::Element(el) => {
                 assert_eq!(el.tag, TagPattern::Exact("task".to_string()));
                 assert_eq!(el.id, Some(SlotPattern::Exact("task-1".to_string())));
                 let args = el.args.unwrap();
                 assert_eq!(args.entries.len(), 1);
-                assert_eq!(args.entries[0], ArgEntryPattern::Positional(ValuePattern::Var("status".to_string())));
+                assert_eq!(
+                    args.entries[0],
+                    ArgEntryPattern::Positional(ValuePattern::Var("status".to_string()))
+                );
                 assert_eq!(el.content, Some(SlotPattern::Var("body".to_string())));
             }
         }
+    }
+
+    #[test]
+    fn a_hole_has_a_group_and_the_group_delimits_the_name() {
+        let p = parse_pattern("@x(a: ?(k), b: ?(kind))").unwrap();
+        let Pattern::Element(el) = &p;
+        assert_eq!(
+            p.bound_names().into_iter().collect::<Vec<_>>(),
+            ["k", "kind"]
+        );
+        assert_eq!(el.args.as_ref().unwrap().entries.len(), 2);
+    }
+
+    #[test]
+    fn the_wildcard_binds_nothing_and_the_tag_may_be_a_hole() {
+        let p = parse_pattern("@?(tag)(?(), a: ?())").unwrap();
+        let Pattern::Element(el) = &p;
+        assert_eq!(el.tag, TagPattern::Var("tag".to_string()));
+        assert_eq!(p.bound_names().into_iter().collect::<Vec<_>>(), ["tag"]);
+        let p = parse_pattern("@?()").unwrap();
+        let Pattern::Element(el) = &p;
+        assert_eq!(el.tag, TagPattern::Any);
+    }
+
+    #[test]
+    fn the_rest_of_a_group_is_named_in_a_hole() {
+        let p = parse_pattern("@x(a: 1, ?(...more)){ k: ?(v), ?(...rest) }").unwrap();
+        let Pattern::Element(el) = &p;
+        assert_eq!(el.args.as_ref().unwrap().rest_var.as_deref(), Some("more"));
+        assert_eq!(el.data.as_ref().unwrap().rest_var.as_deref(), Some("rest"));
+        assert!(p.bound_names().contains("more"));
+    }
+
+    #[test]
+    fn the_old_spellings_are_refused_with_the_new_one() {
+        for (src, hint) in [
+            ("@meta{ type: ?kind }", "?(name)"),
+            ("@meta{ ...?rest }", "?(...name)"),
+            ("@meta{ type: _ }", "?()"),
+            ("@_", "?()"),
+            ("@link[ _ ]", "?()"),
+            ("@x(?(...r))[ ?(...c) ]", "rest of a group"),
+            ("@x(?(...))", "name the rest"),
+        ] {
+            let err = parse_pattern(src).unwrap_err();
+            assert!(err.contains(hint), "{src}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_caret_element_is_a_pattern() {
+        let Pattern::Element(el) = parse_pattern("^(?(id))").unwrap();
+        assert_eq!(el.sigil, SigilKind::Caret);
+        assert_eq!(el.tag, TagPattern::Unnamed);
+        let Pattern::Element(el) = parse_pattern("^footnote(?(id))").unwrap();
+        assert_eq!(el.sigil, SigilKind::Caret);
+        assert_eq!(el.tag, TagPattern::Exact("footnote".to_string()));
+        let Pattern::Element(el) = parse_pattern("^?(t)(?())").unwrap();
+        assert_eq!(el.tag, TagPattern::Var("t".to_string()));
+    }
+
+    #[test]
+    fn a_pattern_without_groups_matches_by_name_alone() {
+        let Pattern::Element(el) = parse_pattern("@kind").unwrap();
+        assert_eq!(el.args, None);
+        assert_eq!(el.data, None);
+        assert_eq!(el.content, None);
     }
 }

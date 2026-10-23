@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use tandr_core::{RuleSet, apply_rule_set};
 
 #[derive(Parser, Debug)]
@@ -52,9 +52,16 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::CheckRules { rules } => {
-            let content = std::fs::read_to_string(&rules)
-                .map_err(|e| anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display()))?;
+            let content = std::fs::read_to_string(&rules).map_err(|e| {
+                anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display())
+            })?;
             let rule_set = RuleSet::from_motem_str(&content)?;
+            if let Err(errors) = rule_set.compile() {
+                for e in &errors {
+                    eprintln!("error: {e}");
+                }
+                anyhow::bail!("{} problem(s) in {}", errors.len(), rules.display());
+            }
             println!(
                 "✓ Successfully parsed {} rule(s) from {}",
                 rule_set.rules.len(),
@@ -71,8 +78,9 @@ fn main() -> anyhow::Result<()> {
             check,
             diff,
         } => {
-            let rule_content = std::fs::read_to_string(&rules)
-                .map_err(|e| anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display()))?;
+            let rule_content = std::fs::read_to_string(&rules).map_err(|e| {
+                anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display())
+            })?;
             let rule_set = RuleSet::from_motem_str(&rule_content)?;
 
             let mut any_modified = false;
@@ -83,6 +91,9 @@ fn main() -> anyhow::Result<()> {
                 let mut buffer = String::new();
                 std::io::stdin().read_to_string(&mut buffer)?;
                 let res = apply_rule_set(&buffer, &rule_set)?;
+                for w in &res.warnings {
+                    eprintln!("warning: <stdin>: {w}");
+                }
                 if diff {
                     print_diff("<stdin>", &buffer, &res.output);
                 } else {
@@ -98,6 +109,9 @@ fn main() -> anyhow::Result<()> {
                     })?;
 
                     let res = apply_rule_set(&src, &rule_set)?;
+                    for w in &res.warnings {
+                        eprintln!("warning: {}: {w}", target_path.display());
+                    }
                     if res.modified {
                         any_modified = true;
                         println!(
@@ -112,10 +126,7 @@ fn main() -> anyhow::Result<()> {
 
                         if in_place {
                             std::fs::write(target_path, &res.output).map_err(|e| {
-                                anyhow::anyhow!(
-                                    "Failed to write to {}: {e}",
-                                    target_path.display()
-                                )
+                                anyhow::anyhow!("Failed to write to {}: {e}", target_path.display())
                             })?;
                         } else if !diff {
                             print!("{}", res.output);
@@ -156,7 +167,8 @@ fn diff_lines(old: &str, new: &str) -> Vec<String> {
             out.push(format!(" {}", old_lines[i]));
             i += 1;
             j += 1;
-        } else if j < new_lines.len() && (i >= old_lines.len() || !old_lines.contains(&new_lines[j]))
+        } else if j < new_lines.len()
+            && (i >= old_lines.len() || !old_lines.contains(&new_lines[j]))
         {
             out.push(format!("+{}", new_lines[j]));
             j += 1;

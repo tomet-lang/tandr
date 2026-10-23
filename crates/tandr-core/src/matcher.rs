@@ -8,7 +8,7 @@ use tomet_semantics::classify_std_lenient;
 use tomet_tree::for_each_element;
 
 use crate::pattern::{
-    ArgEntryPattern, ElementPattern, Pattern, SlotPattern, TagPattern, ValuePattern,
+    ArgEntryPattern, ElementPattern, Pattern, SigilKind, SlotPattern, TagPattern, ValuePattern,
 };
 
 /// Map of captured variable names to their extracted string representations.
@@ -47,22 +47,36 @@ pub fn find_matches(doc: &Document, pattern: &Pattern, src: &str) -> Vec<MatchRe
 pub fn match_element(pat: &ElementPattern, el: &Element, src: &str) -> Option<Bindings> {
     let mut bindings = Bindings::new();
 
-    // 1. Tag name matching
-    let kind = classify_std_lenient(el);
-    let tag_name = if el.sigil.name().is_some() {
-        el.sigil.name().unwrap().name.as_str()
+    // 1. Sigil and tag name matching
+    let caret = el.sigil.is_caret();
+    if (pat.sigil == SigilKind::Caret) != caret {
+        return None;
+    }
+    // A caret may have no name (`^(id)`); an `@` element always does.
+    let tag_name: Option<String> = if caret {
+        el.sigil.caret_target_kind().map(|n| n.name.clone())
+    } else if let Some(name) = el.sigil.name() {
+        Some(name.name.clone())
     } else {
-        kind.as_str()
+        Some(classify_std_lenient(el).as_str().to_string())
     };
 
     match &pat.tag {
         TagPattern::Exact(expected) => {
-            if !tag_name.eq_ignore_ascii_case(expected) {
+            if !tag_name
+                .as_deref()
+                .is_some_and(|t| t.eq_ignore_ascii_case(expected))
+            {
+                return None;
+            }
+        }
+        TagPattern::Unnamed => {
+            if tag_name.is_some() {
                 return None;
             }
         }
         TagPattern::Var(var_name) => {
-            bindings.insert(var_name.clone(), tag_name.to_string());
+            bindings.insert(var_name.clone(), tag_name?);
         }
         TagPattern::Any => {}
     }
@@ -247,7 +261,7 @@ mod tests {
     fn matches_meta_and_captures_fields() {
         let src = "@meta{ type: \"article\", title: \"My Post\", author: \"Alice\" }\n";
         let doc = parse_document(src).unwrap();
-        let pat = parse_pattern("@meta{ type: ?kind, ...?rest }").unwrap();
+        let pat = parse_pattern("@meta{ type: ?(kind), ?(...rest) }").unwrap();
 
         let matches = find_matches(&doc, &pat, src);
         assert_eq!(matches.len(), 1);
@@ -261,7 +275,7 @@ mod tests {
     fn matches_link_with_args_and_content() {
         let src = "Check @link(url: \"https://example.com\")[ Visit Here ] today.\n";
         let doc = parse_document(src).unwrap();
-        let pat = parse_pattern("@link(url: ?u)[ ?text ]").unwrap();
+        let pat = parse_pattern("@link(url: ?(u))[ ?(text) ]").unwrap();
 
         let matches = find_matches(&doc, &pat, src);
         assert_eq!(matches.len(), 1);

@@ -17,9 +17,9 @@ Status: ドラフト。2026-10-20 作成。
 ```tmt
 promote_meta_type: {
     description: "@meta{type: ...} を @kind(...) へ昇格し、残りのメタデータを維持"
-    match: "@meta{ type: ?k, ...?rest }"
-    where: "?k != 'raw'"
-    replace: "@kind(?k)\n@meta{ ...?rest }"
+    match: "@meta{ type: ?(k), ?(...rest) }"
+    where: "?(k) != 'raw'"
+    replace: "@kind(?(k))\n@meta{ ?(...rest) }"
 }
 ```
 
@@ -40,8 +40,8 @@ promote_meta_type: {
 ```tmt
 sort_tags: {
     description: "メタデータの tags リストをソートして重複排除"
-    match: "@meta{ tags: ?tags, ...?rest }"
-    replace: "@meta{ tags: ?tags | unique | sort, ...?rest }"
+    match: "@meta{ tags: ?(tags), ?(...rest) }"
+    replace: "@meta{ tags: ?(tags | unique | sort), ?(...rest) }"
 }
 ```
 
@@ -52,8 +52,8 @@ sort_tags: {
 ```tmt
 ensure_meta_header: {
     description: "先頭に @meta がない場合、デフォルトのメタデータを補完"
-    match: "!@meta + =[ ?first_title ]"
-    replace: "@meta{\n  title: ?first_title\n  draft: true\n}\n\n=[ ?first_title ]"
+    match: "!@meta + =[ ?(first_title) ]"
+    replace: "@meta{\n  title: ?(first_title)\n  draft: true\n}\n\n=[ ?(first_title) ]"
 }
 ```
 
@@ -66,9 +66,9 @@ ensure_meta_header: {
 ```tmt
 add_external_link_attributes: {
     description: "外部リンクにセキュリティ属性を自動付与"
-    match: "@link(url: ?u, ...?rest)[ ?text ]"
-    where: "?u | test('^https?://') && !has_key(?rest, 'rel')"
-    replace: "@link(url: ?u, rel: 'external', target: '_blank', ...?rest)[ ?text ]"
+    match: "@link(url: ?(u), ?(...rest))[ ?(text) ]"
+    where: "?(u | test('^https?://')) && !has_key(?(rest), 'rel')"
+    replace: "@link(url: ?(u), rel: 'external', target: '_blank', ?(...rest))[ ?(text) ]"
 }
 ```
 
@@ -79,9 +79,9 @@ add_external_link_attributes: {
 ```tmt
 autolink_raw_urls: {
     description: "プロトコル付き URL を @link 要素でラップ"
-    match: "?raw_url"
-    where: "?raw_url | test('^https?://[a-zA-Z0-9./?=#_-]+$')"
-    replace: "@link(url: ?raw_url)[ ?raw_url ]"
+    match: "?(raw_url)"
+    where: "?(raw_url | test('^https?://[a-zA-Z0-9./?=#_-]+$'))"
+    replace: "@link(url: ?(raw_url))[ ?(raw_url) ]"
 }
 ```
 
@@ -94,8 +94,8 @@ autolink_raw_urls: {
 ```tmt
 demote_subsections: {
     description: "特定セクション配下の H1 を H2 へ降格"
-    match: "=[ Main ] >> =[ ?sub_title ]"
-    replace: "==[ ?sub_title ]"
+    match: "=[ Main ] >> =[ ?(sub_title) ]"
+    replace: "==[ ?(sub_title) ]"
 }
 ```
 
@@ -106,9 +106,9 @@ ID のない見出しに、タイトルから自動生成した kebab-case の�
 ```tmt
 auto_heading_ids: {
     description: "見出しにタイトル由来の slug ID を付与"
-    match: "=[ ?title ]"
+    match: "=[ ?(title) ]"
     where: "!has_id()"
-    replace: "=[ ?title ]#( ?title | slug )"
+    replace: "=[ ?(title) ]#( ?(title | slug) )"
 }
 ```
 
@@ -124,16 +124,16 @@ Markdown 風の `- ( )` や `- (x)` を、セマンティックな `@task` 要�
 ```tmt
 convert_list_tasks_to_element: {
     description: "リスト形式のタスクを @task 記法へ正規化"
-    match: "- (?state) [ ?body ]"
-    where: "?state in list(' ', '', 'todo')"
-    replace: "@task(todo)[ ?body | trim ]"
+    match: "- (?(state)) [ ?(body) ]"
+    where: "?(state) in list(' ', '', 'todo')"
+    replace: "@task(todo)[ ?(body | trim) ]"
 }
 
 convert_done_tasks_to_element: {
     description: "完了タスクの正規化"
-    match: "- (?state) [ ?body ]"
-    where: "?state in list('x', 'X', 'done')"
-    replace: "@task(done)[ ?body | trim ]"
+    match: "- (?(state)) [ ?(body) ]"
+    where: "?(state) in list('x', 'X', 'done')"
+    replace: "@task(done)[ ?(body | trim) ]"
 }
 ```
 
@@ -144,8 +144,8 @@ convert_done_tasks_to_element: {
 ```tmt
 archive_completed_tasks: {
     description: "完了タスクをセクション末尾へ移動"
-    match: "=[ ?sec ] >> @task(done)[ ?body ]"
-    move_to: "=[ ?sec ] >> ==[ Done Archive ]"
+    match: "=[ ?(sec) ] >> @task(done)[ ?(body) ]"
+    move_to: "=[ ?(sec) ] >> ==[ Done Archive ]"
 }
 ```
 
@@ -158,8 +158,8 @@ archive_completed_tasks: {
 ```tmt
 default_code_language: {
     description: "言語指定のないコードブロックに tomet を指定"
-    match: "```\n?code\n```"
-    replace: "```tomet\n?code\n```"
+    match: "```\n?(code)\n```"
+    replace: "```tomet\n?(code)\n```"
 }
 ```
 
@@ -170,14 +170,14 @@ default_code_language: {
 ```tmt
 format_json_blocks: {
     description: "JSON コードブロックを prettier で整形"
-    match: "```json\n?code\n```"
-    replace: "```json\n?code | sh('prettier --parser json')\n```"
+    match: "```json\n?(code)\n```"
+    replace: "```json\n?(code | sh('prettier --parser json'))\n```"
 }
 
 format_rust_blocks: {
     description: "Rust コードブロックを rustfmt で整形"
-    match: "```rust\n?code\n```"
-    replace: "```rust\n?code | sh('rustfmt --emit stdout')\n```"
+    match: "```rust\n?(code)\n```"
+    replace: "```rust\n?(code | sh('rustfmt --emit stdout'))\n```"
 }
 ```
 
@@ -190,8 +190,8 @@ format_rust_blocks: {
 ```tmt
 normalize_zenkaku: {
     description: "本文中の全角文字を Python の unicodedata.normalize で変換"
-    match: "?text"
-    replace: "?text | py('unicodedata:normalize', 'NFKC')"
+    match: "?(text)"
+    replace: "?(text | py('unicodedata:normalize', 'NFKC'))"
 }
 ```
 
@@ -202,9 +202,9 @@ normalize_zenkaku: {
 ```tmt
 auto_wrap_terms: {
     description: "キーワードを @term 要素でマークアップ"
-    match: "?word"
-    where: "?word in list('tomet', 'twrit', 'tandr', 'sisho')"
-    replace: "@term[?word]"
+    match: "?(word)"
+    where: "?(word) in list('tomet', 'twrit', 'tandr', 'sisho')"
+    replace: "@term[?(word)]"
 }
 ```
 
@@ -217,8 +217,8 @@ auto_wrap_terms: {
 ```tmt
 convert_blockquote_to_callout: {
     description: "GitHub スタイルのアラートを @callout 要素へ変換"
-    match: "> [!?kind]\n> ?body"
-    replace: "@callout(type: ?kind | lower)[ ?body ]"
+    match: "> [!?(kind)]\n> ?(body)"
+    replace: "@callout(type: ?(kind | lower))[ ?(body) ]"
 }
 ```
 
