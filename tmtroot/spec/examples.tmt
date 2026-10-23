@@ -1,0 +1,233 @@
+@meta{
+  id: spec.examples
+  title: "tandr 整形具体例カタログ (Showcase)"
+}
+
+=[ tandr 整形具体例カタログ ]
+
+Status: ドラフト。2026-10-20 作成。
+「思ったこと全部できる、それが tandr」を体現する、あらゆる構造変形・整形の実例集。
+
+==[ 1. メタデータ・文書属性の整形 ]
+
+===[ 1.1 @meta{type: ...} の @kind 昇格 ]
+
+旧仕様のメタデータ型指定を、文書の第一級ディレクティブ `@kind` へ昇格させます。
+
+```tmt
+promote_meta_type: {
+    description: "@meta{type: ...} を @kind(...) へ昇格し、残りのメタデータを維持"
+    match: "@meta{ type: ?k, ...?rest }"
+    where: "?k != 'raw'"
+    replace: "@kind(?k)\n@meta{ ...?rest }"
+}
+```
+
+- Before:
+  ```tmt
+  @meta{ type: "article", title: "My Post", author: "Alice" }
+  ```
+- After:
+  ```tmt
+  @kind("article")
+  @meta{ title: "My Post", author: "Alice" }
+  ```
+
+===[ 1.2 タグ一覧のソート・正規化 ]
+
+`tags` 配列の重複を排除し、アルファベット順に整列します。
+
+```tmt
+sort_tags: {
+    description: "メタデータの tags リストをソートして重複排除"
+    match: "@meta{ tags: ?tags, ...?rest }"
+    replace: "@meta{ tags: ?tags | unique | sort, ...?rest }"
+}
+```
+
+===[ 1.3 存在しない @meta の自動挿入 ]
+
+文書の先頭に `@meta` が存在しない場合、デフォルトのテンプレートを補完します。
+
+```tmt
+ensure_meta_header: {
+    description: "先頭に @meta がない場合、デフォルトのメタデータを補完"
+    match: "!@meta + =[ ?first_title ]"
+    replace: "@meta{\n  title: ?first_title\n  draft: true\n}\n\n=[ ?first_title ]"
+}
+```
+
+==[ 2. リンク・参照の整形 ]
+
+===[ 2.1 外部リンクへの属性自動付与 ]
+
+`http://` または `https://` で始まるリンクにのみ `rel: "external"` と `target: "_blank"` を付加します。
+
+```tmt
+add_external_link_attributes: {
+    description: "外部リンクにセキュリティ属性を自動付与"
+    match: "@link(url: ?u, ...?rest)[ ?text ]"
+    where: "?u | test('^https?://') && !has_key(?rest, 'rel')"
+    replace: "@link(url: ?u, rel: 'external', target: '_blank', ...?rest)[ ?text ]"
+}
+```
+
+===[ 2.2 生の URL テキストを @link 要素に変換 ]
+
+本文中に直接書かれた URL 文字列を自動で `@link` 要素化します。
+
+```tmt
+autolink_raw_urls: {
+    description: "プロトコル付き URL を @link 要素でラップ"
+    match: "?raw_url"
+    where: "?raw_url | test('^https?://[a-zA-Z0-9./?=#_-]+$')"
+    replace: "@link(url: ?raw_url)[ ?raw_url ]"
+}
+```
+
+==[ 3. 見出し・セクションの整形 ]
+
+===[ 3.1 見出しレベルの一括シフト (降格) ]
+
+インポートされた外部文書の H1 見出しが複数ある場合、すべて H2 (`==[...]`) にシフトします。
+
+```tmt
+demote_subsections: {
+    description: "特定セクション配下の H1 を H2 へ降格"
+    match: "=[ Main ] >> =[ ?sub_title ]"
+    replace: "==[ ?sub_title ]"
+}
+```
+
+===[ 3.2 見出しテキストからスラッグ ID を自動生成 ]
+
+ID のない見出しに、タイトルから自動生成した kebab-case のスラッグ ID を付与します。
+
+```tmt
+auto_heading_ids: {
+    description: "見出しにタイトル由来の slug ID を付与"
+    match: "=[ ?title ]"
+    where: "!has_id()"
+    replace: "=[ ?title ]#( ?title | slug )"
+}
+```
+
+- Before: `=[ Getting Started & Setup ]`
+- After: `=[ Getting Started & Setup ]#(getting-started-setup)`
+
+==[ 4. タスク・リスト項目の整形 ]
+
+===[ 4.1 リスト形式のタスクを @task 要素へ統一 ]
+
+Markdown 風の `- ( )` や `- (x)` を、セマンティックな `@task` 要素へ変換します。
+
+```tmt
+convert_list_tasks_to_element: {
+    description: "リスト形式のタスクを @task 記法へ正規化"
+    match: "- (?state) [ ?body ]"
+    where: "?state in list(' ', '', 'todo')"
+    replace: "@task(todo)[ ?body | trim ]"
+}
+
+convert_done_tasks_to_element: {
+    description: "完了タスクの正規化"
+    match: "- (?state) [ ?body ]"
+    where: "?state in list('x', 'X', 'done')"
+    replace: "@task(done)[ ?body | trim ]"
+}
+```
+
+===[ 4.2 完了タスクの一括アーカイブ・末尾移動 ]
+
+セクション内で完了したタスクを、セクション末尾の「完了済み」見出し配下へ集約します。
+
+```tmt
+archive_completed_tasks: {
+    description: "完了タスクをセクション末尾へ移動"
+    match: "=[ ?sec ] >> @task(done)[ ?body ]"
+    move_to: "=[ ?sec ] >> ==[ Done Archive ]"
+}
+```
+
+==[ 5. コードブロックの整形・外部フォーマッタ連携 ]
+
+===[ 5.1 未指定コードブロックへの言語タグ補完 ]
+
+言語が指定されていないコードブロックにデフォルト言語を補完します。
+
+```tmt
+default_code_language: {
+    description: "言語指定のないコードブロックに tomet を指定"
+    match: "```\n?code\n```"
+    replace: "```tomet\n?code\n```"
+}
+```
+
+===[ 5.2 外部フォーマッタ (Prettier / rustfmt) による整形 ]
+
+コードブロックの内部コードを、外部の整形ツール（シェルコマンド）を通して再インデント・整形します。
+
+```tmt
+format_json_blocks: {
+    description: "JSON コードブロックを prettier で整形"
+    match: "```json\n?code\n```"
+    replace: "```json\n?code | sh('prettier --parser json')\n```"
+}
+
+format_rust_blocks: {
+    description: "Rust コードブロックを rustfmt で整形"
+    match: "```rust\n?code\n```"
+    replace: "```rust\n?code | sh('rustfmt --emit stdout')\n```"
+}
+```
+
+==[ 6. インライン装飾・テキストの整形 ]
+
+===[ 6.1 全角英数・スペースの半角正規化 ]
+
+本文中の全角アルファベット・数値を半角に統一します。
+
+```tmt
+normalize_zenkaku: {
+    description: "本文中の全角文字を Python の unicodedata.normalize で変換"
+    match: "?text"
+    replace: "?text | py('unicodedata:normalize', 'NFKC')"
+}
+```
+
+===[ 6.2 特定キーワードの専門用語要素化 ]
+
+ドキュメント内で言及される専門用語（例: `tomet`, `twrit`, `tandr`）を自動的に `@term` 要素でラップします。
+
+```tmt
+auto_wrap_terms: {
+    description: "キーワードを @term 要素でマークアップ"
+    match: "?word"
+    where: "?word in list('tomet', 'twrit', 'tandr', 'sisho')"
+    replace: "@term[?word]"
+}
+```
+
+==[ 7. コールアウト・コンテナの変換 ]
+
+===[ 7.1 引用ブロックのコールアウト変換 ]
+
+旧式の `> [!NOTE]` 記法を tomet 標準の `@callout` 要素へ書き換えます。
+
+```tmt
+convert_blockquote_to_callout: {
+    description: "GitHub スタイルのアラートを @callout 要素へ変換"
+    match: "> [!?kind]\n> ?body"
+    replace: "@callout(type: ?kind | lower)[ ?body ]"
+}
+```
+
+- Before:
+  ```tmt
+  > [!WARNING]
+  > This API is deprecated.
+  ```
+- After:
+  ```tmt
+  @callout(type: "warning")[ This API is deprecated. ]
+  ```

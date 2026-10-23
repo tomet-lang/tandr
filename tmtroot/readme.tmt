@@ -1,0 +1,37 @@
+@meta{
+  id: tandr.readme
+  title: "tandr - Tomet 構造検索・書き換え・整形ツール"
+}
+
+=[ tandr ]
+
+tomet 専用の、人間が読める構造検索・書き換え・整形言語とその CLI。
+regex が苦手なネスト・対応関係を、tomet の構文木（AST/CST）の上で扱い、**「思ったこと全部できる」** 柔軟な構造整形を実現します。
+
+==[ 特徴 ]
+
+- **motem (tove) 構文**: ルール定義は tomet の双対データ言語である motem（Style A マップ形式）で記述。
+- **穴あき tomet 構文**: `@meta{ type: ?k, ...?rest }` のように、直感的なパターンでマッチ。
+- **非破壊・精密置換**: 変更箇所のみを外科手術的に置換し、前後のコメントやインデント、空行を保持。
+- **高速・単一バイナリ**: コアは Rust 製で、`sisho check` / `sisho fix` のパイプラインに直結。
+
+==[ ドキュメント ]
+
+- @doc(spec.syntax)[ tandr 構文・ルール仕様書 ]: 文法・パターン・ガード条件・フィルタ・脱出ハッチの仕様。
+- @doc(spec.examples)[ tandr 整形具体例カタログ ]: メタデータ昇格、リンク属性付与、見出しシフト、タスク整理、Prettier 連携など多彩な具体例。
+
+==[ 使い方 ]
+
+```bash
+# ルールファイルの構文チェック
+tandr check-rules rules.tandr
+
+# 差分表示
+tandr run -r rules.tandr target.tmt --diff
+
+# ファイルを直接書き換え (in-place)
+tandr run -r rules.tandr target.tmt -i
+
+# CI 用チェック (変更があれば終了コード 1)
+tandr run -r rules.tandr target.tmt --check
+```
