@@ -34,4 +34,10 @@ tandr run -r rules.tandr target.tmt -i
 
 # CI 用チェック (変更があれば終了コード 1)
 tandr run -r rules.tandr target.tmt --check
+
+# ディレクトリごと (`.tmt` を再帰的に探す)
+tandr run -r rules.tandr docs/ -i
+tandr run -r rules.tandr . --check
 ```
+
+ディレクトリは `tomet format` と同じ範囲を歩きます。`.gitignore` と、プロジェクト設定の `workspace.ignore` / `workspace.unswept`（凍結したテストコーパスなど）は対象になりません。名前を直接指定したファイルにも同じ除外がかかり、`--force` で外せます。ディレクトリには `-i`、`--diff`、`--check` のどれかが要ります。ファイルが読めない、解析できないといったときは、そのファイルを報告して残りを続け、最後に失敗の件数で終了コードを非 0 にします。

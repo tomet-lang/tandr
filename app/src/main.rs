@@ -1,3 +1,5 @@
+mod targets;
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tandr_core::{RuleSet, apply_rule_set};
@@ -22,7 +24,10 @@ enum Commands {
         #[arg(short, long, value_name = "RULES")]
         rules: PathBuf,
 
-        /// Target tomet files to transform
+        /// Tomet files or directories to transform. A directory is swept for
+        /// `.tmt` files the way `tomet format` sweeps one: `.gitignore` and the
+        /// project config's `workspace.ignore` / `workspace.unswept` apply.
+        /// Reads standard input when none is given.
         #[arg(value_name = "TARGETS")]
         targets: Vec<PathBuf>,
 
@@ -37,6 +42,11 @@ enum Commands {
         /// Show unified diff
         #[arg(long)]
         diff: bool,
+
+        /// Also rewrite files and directories the project config excludes
+        /// (`workspace.ignore`, `workspace.unswept`). `.gitignore` still applies.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Validate the syntax of a .tandr rule file
@@ -77,11 +87,19 @@ fn main() -> anyhow::Result<()> {
             in_place,
             check,
             diff,
+            force,
         } => {
             let rule_content = std::fs::read_to_string(&rules).map_err(|e| {
                 anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display())
             })?;
             let rule_set = RuleSet::from_motem_str(&rule_content)?;
+            // once, before any file: a bad rule is the same for every file
+            if let Err(errors) = rule_set.compile() {
+                for e in &errors {
+                    eprintln!("error: {e}");
+                }
+                anyhow::bail!("{} problem(s) in {}", errors.len(), rules.display());
+            }
 
             let mut any_modified = false;
 
@@ -103,37 +121,69 @@ fn main() -> anyhow::Result<()> {
                     any_modified = true;
                 }
             } else {
-                for target_path in &targets {
-                    let src = std::fs::read_to_string(target_path).map_err(|e| {
-                        anyhow::anyhow!("Failed to read target {}: {e}", target_path.display())
-                    })?;
+                let resolved = targets::resolve(&targets, force)?;
+                for path in &resolved.skipped {
+                    eprintln!(
+                        "skipped {}: excluded by the project config (workspace.ignore / \
+                         workspace.unswept); pass --force to include it",
+                        path.display()
+                    );
+                }
+                if resolved.swept && !(in_place || check || diff) {
+                    anyhow::bail!(
+                        "a directory needs --in-place, --diff or --check: printing every \
+                         rewritten document one after another is not a result"
+                    );
+                }
 
-                    let res = apply_rule_set(&src, &rule_set)?;
+                let (mut changed, mut failed) = (0usize, 0usize);
+                for target in &resolved.targets {
+                    let path = &target.path;
+                    let src = match std::fs::read_to_string(path) {
+                        Ok(src) => src,
+                        Err(e) => {
+                            eprintln!("error: {}: could not be read: {e}", path.display());
+                            failed += 1;
+                            continue;
+                        }
+                    };
+                    let res = match apply_rule_set(&src, &rule_set) {
+                        Ok(res) => res,
+                        Err(e) => {
+                            eprintln!("error: {}: {e}", path.display());
+                            failed += 1;
+                            continue;
+                        }
+                    };
                     for w in &res.warnings {
-                        eprintln!("warning: {}: {w}", target_path.display());
+                        eprintln!("warning: {}: {w}", path.display());
                     }
                     if res.modified {
                         any_modified = true;
-                        println!(
-                            "~ {}: {} change(s)",
-                            target_path.display(),
-                            res.changes_count
-                        );
+                        changed += 1;
+                        println!("~ {}: {} change(s)", path.display(), res.changes_count);
 
                         if diff {
-                            print_diff(&target_path.display().to_string(), &src, &res.output);
+                            print_diff(&path.display().to_string(), &src, &res.output);
                         }
 
                         if in_place {
-                            std::fs::write(target_path, &res.output).map_err(|e| {
-                                anyhow::anyhow!("Failed to write to {}: {e}", target_path.display())
-                            })?;
-                        } else if !diff {
+                            if let Err(e) = std::fs::write(path, &res.output) {
+                                eprintln!("error: {}: could not be written: {e}", path.display());
+                                failed += 1;
+                            }
+                        } else if !diff && !check {
                             print!("{}", res.output);
                         }
-                    } else if !check && !diff {
-                        println!("= {} (unchanged)", target_path.display());
+                    } else if target.named && !check && !diff {
+                        println!("= {} (unchanged)", path.display());
                     }
+                }
+                if resolved.swept || resolved.targets.len() > 1 {
+                    println!("{changed} of {} file(s) changed", resolved.targets.len());
+                }
+                if failed > 0 {
+                    anyhow::bail!("{failed} file(s) failed");
                 }
             }
 
