@@ -250,6 +250,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "motem"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "tomet-ast",
+ "tomet-lexer",
+]
+
+[[package]]
 name = "nanoid"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -468,6 +477,7 @@ name = "tandr-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "motem",
  "serde",
  "serde_json",
  "tomet-ast",
@@ -476,7 +486,6 @@ dependencies = [
  "tomet-parser",
  "tomet-semantics",
  "tomet-tree",
- "tove",
 ]
 
 [[package]]
@@ -529,6 +538,7 @@ dependencies = [
  "tomet-ast",
  "tomet-parser",
  "tomet-semantics",
+ "tomet-spec-derive",
  "tomet-tree",
 ]
 
@@ -543,6 +553,7 @@ dependencies = [
 name = "tomet-edit"
 version = "0.2.0"
 dependencies = [
+ "motem",
  "tomet-address",
  "tomet-ast",
  "tomet-cst",
@@ -586,11 +597,11 @@ dependencies = [
 name = "tomet-parser"
 version = "0.2.0"
 dependencies = [
+ "motem",
  "tomet-ast",
  "tomet-cst",
  "tomet-lexer",
  "tomet-tree",
- "tove",
  "unicode-width",
 ]
 
@@ -607,6 +618,7 @@ dependencies = [
 name = "tomet-semantics"
 version = "0.2.0"
 dependencies = [
+ "motem",
  "serde_json",
  "tomet-address",
  "tomet-ast",
@@ -614,9 +626,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tomet-spec-derive"
+version = "0.2.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "tomet-style"
 version = "0.2.0"
 dependencies = [
+ "motem",
  "tomet-ast",
  "tomet-config",
  "tomet-field-utils",
@@ -703,15 +725,6 @@ dependencies = [
  "tomet-semantics",
  "tomet-transform",
  "tomet-validator",
-]
-
-[[package]]
-name = "tove"
-version = "0.2.0"
-dependencies = [
- "serde",
- "tomet-ast",
- "tomet-lexer",
 ]
 
 [[package]]

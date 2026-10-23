@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-tove = { workspace = true }
+motem = { workspace = true }
 tomet-ast = { workspace = true }
 tomet-cst = { workspace = true }
 tomet-parser = { workspace = true }

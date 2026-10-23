@@ -43,9 +43,9 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    /// Parses a `.tandr` string written in motem (tove) map syntax.
+    /// Parses a `.tandr` string written in motem map syntax.
     pub fn from_motem_str(src: &str) -> anyhow::Result<Self> {
-        let map: BTreeMap<String, RuleDef> = tove::from_str(src)
+        let map: BTreeMap<String, RuleDef> = motem::from_str(src)
             .map_err(|e| anyhow::anyhow!("Failed to parse .tandr rules: {e}"))?;
 
         let rules = map
