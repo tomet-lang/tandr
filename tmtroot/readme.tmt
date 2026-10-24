@@ -17,8 +17,8 @@ regex が苦手なネスト・対応関係を、tomet の構文木（AST/CST）�
 
 ==[ ドキュメント ]
 
-- @doc(spec.syntax)[ tandr 構文・ルール仕様書 ]: 文法・パターン・ガード条件・フィルタ・脱出ハッチの仕様。
-- @doc(spec.examples)[ tandr 整形具体例カタログ ]: メタデータ昇格、リンク属性付与、見出しシフト、タスク整理、Prettier 連携など多彩な具体例。
+- @link(tmtroot/spec/syntax.tmt)[ tandr 構文・ルール仕様書 ]: 文法・パターン・ガード条件・フィルタ・脱出ハッチの仕様。
+- @link(tmtroot/spec/examples.tmt)[ tandr 整形具体例カタログ ]: メタデータ昇格、リンク属性付与、見出しシフト、タスク整理、Prettier 連携など多彩な具体例。
 
 ==[ 使い方 ]
 

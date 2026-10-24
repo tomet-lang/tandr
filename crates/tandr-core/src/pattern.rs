@@ -16,16 +16,20 @@ use crate::hole::{Hole, parse_hole};
 /// A structural pattern to match against tomet documents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pattern {
-    /// Matches an element `@sigil(args){data}[content]#(id)`.
+    /// Matches an element `@name(args){data}[content]#(id)` or `::name(args){data}[content]#(id)`.
     Element(ElementPattern),
 }
 
-/// Which sigil an element pattern is written with.
+/// Which sigil an element pattern is written with. A pattern matches only the
+/// elements written with the same sigil: an `@name` pattern never matches a
+/// `::name` declaration, and the other way round.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SigilKind {
-    /// `@name`
+    /// `@name`: content
     #[default]
     At,
+    /// `::name`: a declaration about the document
+    Document,
 }
 
 /// Pattern for matching an element.
@@ -158,7 +162,7 @@ impl<'a> PatternParser<'a> {
 
     fn parse(&mut self) -> Result<Pattern, String> {
         self.skip_ws();
-        if matches!(self.peek(), Some('@')) {
+        if matches!(self.peek(), Some('@')) || self.starts_with("::") {
             let el = self.parse_element()?;
             self.skip_ws();
             if self.pos < self.chars.len() {
@@ -171,15 +175,20 @@ impl<'a> PatternParser<'a> {
             Ok(Pattern::Element(el))
         } else {
             Err(format!(
-                "Pattern must start with '@' (got {:?})",
+                "Pattern must start with '@' or '::' (got {:?})",
                 self.peek()
             ))
         }
     }
 
     fn parse_element(&mut self) -> Result<ElementPattern, String> {
-        self.expect('@')?;
-        let sigil = SigilKind::At;
+        let sigil = if self.starts_with("::") {
+            self.pos += 2;
+            SigilKind::Document
+        } else {
+            self.expect('@')?;
+            SigilKind::At
+        };
         let tag = self.parse_tag()?;
 
         let mut el = ElementPattern {
@@ -433,11 +442,11 @@ impl<'a> PatternParser<'a> {
                     if c == quote {
                         break;
                     }
-                    if c == '\\' {
-                        if let Some(escaped) = self.bump() {
-                            s.push(escaped);
-                            continue;
-                        }
+                    if c == '\\'
+                        && let Some(escaped) = self.bump()
+                    {
+                        s.push(escaped);
+                        continue;
                     }
                     s.push(c);
                 }
@@ -635,6 +644,17 @@ mod tests {
             let err = parse_pattern(src).unwrap_err();
             assert!(err.contains(hint), "{src}: {err}");
         }
+    }
+
+    #[test]
+    fn the_sigil_is_part_of_the_pattern() {
+        let Pattern::Element(el) = parse_pattern("::meta{ id: ?(i) }").unwrap();
+        assert_eq!(el.sigil, SigilKind::Document);
+        assert_eq!(el.tag, TagPattern::Exact("meta".to_string()));
+        let Pattern::Element(el) = parse_pattern("@meta").unwrap();
+        assert_eq!(el.sigil, SigilKind::At);
+        let err = parse_pattern(":meta").unwrap_err();
+        assert!(err.contains("'::'"), "{err}");
     }
 
     #[test]

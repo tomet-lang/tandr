@@ -2,3 +2,5 @@
 - ast-grep / semgrep: 構文木に対するパターンです。
 - tree-sitter query: S式で、読みやすくはありません。
 - Rosie: 読みやすい regex 代替です。
+
+- sort機能。

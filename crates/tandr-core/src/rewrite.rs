@@ -150,13 +150,13 @@ pub fn apply_rule_set(src: &str, rule_set: &RuleSet) -> Result<RewriteResult> {
         let doc = parse_document(&current_text).map_err(|e| {
             anyhow::anyhow!("Failed to parse document during rule '{}': {e}", rule.name)
         })?;
-        let mut matches = find_matches(&doc, &rule.pattern, &current_text);
+        let index = ElementIndex::new(&parse_cst(&current_text));
+        let mut matches = find_matches(&doc, &rule.pattern, &current_text, &index);
         if matches.is_empty() {
             continue;
         }
         // outer matches before the ones inside them
         matches.sort_by_key(|m| (m.span.start, std::cmp::Reverse(m.span.end)));
-        let index = ElementIndex::new(&parse_cst(&current_text));
 
         let mut accepted: Vec<Edit> = Vec::new();
         for m in &matches {
@@ -364,6 +364,69 @@ mod tests {
         assert_eq!(res.output, "<@box[ x ]>\n");
         assert_eq!(res.changes_count, 1);
         assert!(res.warnings[0].contains("overlaps"), "{:?}", res.warnings);
+    }
+
+    #[test]
+    fn a_capture_is_the_text_as_written() {
+        // bare word, escaped quote, trailing zero, a call: none may be rendered again
+        let src = "@t(a: 1.50, b: x){ s: \"q\\\"z\", l: list(1, 2) }\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@t(a: ?(a), b: ?(b)){ s: ?(s), l: ?(l) }", replace: "@u(?(a), ?(b), ?(s), ?(l))" }
+        "#,
+        );
+        assert_eq!(res.output, "@u(1.50, x, \"q\\\"z\", list(1, 2))\n");
+    }
+
+    #[test]
+    fn the_rest_is_kept_as_written_too() {
+        let src = "@m{ type: a, k: 0x10, \"w\": \"v\" }\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@m{ type: ?(t), ?(...rest) }", replace: "@k(?(t)) @m{ ?(...rest) }" }
+        "#,
+        );
+        assert_eq!(res.output, "@k(a) @m{ k: 0x10, \"w\": \"v\" }\n");
+    }
+
+    #[test]
+    fn a_declaration_pattern_matches_declarations_and_not_content() {
+        let src = "::kind(config)\n::meta{ id: x }\n\n@meta{ id: y }\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "::meta{ id: ?(i) }", replace: "::meta{ id: ?(i), v: 2 }" }
+        "#,
+        );
+        assert_eq!(
+            res.output,
+            "::kind(config)\n::meta{ id: x, v: 2 }\n\n@meta{ id: y }\n"
+        );
+        assert_eq!(res.changes_count, 1);
+    }
+
+    #[test]
+    fn a_content_pattern_does_not_match_a_declaration() {
+        let src = "::kind(config)\n";
+        let res = run(src, r#"r: { match: "@kind", replace: { head: "::gone" } }"#);
+        assert_eq!(res.output, src);
+        assert_eq!(res.changes_count, 0);
+    }
+
+    #[test]
+    fn a_declaration_can_be_turned_into_content_and_back() {
+        let res = run(
+            "::meta{ id: x }\n",
+            r#"r: { match: "::meta", replace: { head: "@meta" } }"#,
+        );
+        assert_eq!(res.output, "@meta{ id: x }\n");
+        let res = run(
+            "@meta{ id: x }\n",
+            r#"r: { match: "@meta", replace: { head: "::meta" } }"#,
+        );
+        assert_eq!(res.output, "::meta{ id: x }\n");
     }
 
     #[test]

@@ -16,4 +16,4 @@ run-example:
     cargo run -p tandr-cli -- check-rules examples/rules.tandr
 
 run-example-diff:
-    cargo run -p tandr-cli -- run -r examples/rules.tandr examples/sample.tmt --diff
+    cargo run -p tandr-cli -- run -r examples/rules.tandr examples/sample.tmt --diff --force

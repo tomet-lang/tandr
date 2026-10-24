@@ -32,6 +32,7 @@ use crate::template::Template;
 
 /// Definition of an individual rewrite rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuleDef {
     /// Human-readable explanation of what this rule does.
     pub description: Option<String>,
@@ -363,6 +364,16 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("tail"), "{err}");
+    }
+
+    #[test]
+    fn a_key_the_rule_does_not_have_is_refused_not_ignored() {
+        // a typo or a feature not built must not turn a rewrite into a mere search
+        for key in ["replce", "py_transform"] {
+            let src = format!(r#"r: {{ match: "@a", {key}: "x" }}"#);
+            let err = RuleSet::from_cotomet_str(&src).unwrap_err().to_string();
+            assert!(err.contains(key), "{err}");
+        }
     }
 
     #[test]

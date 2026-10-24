@@ -135,7 +135,7 @@ mod tests {
 
         let r = resolve(&[frozen.clone(), normal.clone()], false).unwrap();
         assert!(!r.swept);
-        assert_eq!(r.skipped, [frozen.clone()]);
+        assert_eq!(r.skipped, std::slice::from_ref(&frozen));
         assert_eq!(
             r.targets,
             [Target {

@@ -1,0 +1,8 @@
+::kind(config)
+::meta{id: doc-default-config}
+::config{
+  workspace: {
+    # examples/sample.tmt is the old-form input the example rules rewrite.
+    unswept: list( "examples" )
+  }
+}
