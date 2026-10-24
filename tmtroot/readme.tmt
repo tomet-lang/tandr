@@ -1,4 +1,4 @@
-@meta{
+::meta{
   id: tandr.readme
   title: "tandr - Tomet 構造検索・書き換え・整形ツール"
 }
@@ -10,7 +10,7 @@ regex が苦手なネスト・対応関係を、tomet の構文木（AST/CST）�
 
 ==[ 特徴 ]
 
-- **motem (tove) 構文**: ルール定義は tomet の双対データ言語である motem（Style A マップ形式）で記述。
+- **cotomet 構文**: ルール定義は tomet の双対データ言語である cotomet（Style A マップ形式）で記述。
 - **穴あき tomet 構文**: `@meta{ type: ?(k), ?(...rest) }` のように、直感的なパターンでマッチ。
 - **非破壊・精密置換**: 変更箇所のみを外科手術的に置換し、前後のコメントやインデント、空行を保持。
 - **高速・単一バイナリ**: コアは Rust 製で、`sisho check` / `sisho fix` のパイプラインに直結。

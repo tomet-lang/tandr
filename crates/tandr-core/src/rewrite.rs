@@ -201,7 +201,7 @@ mod tests {
     use super::*;
 
     fn rules(src: &str) -> RuleSet {
-        RuleSet::from_motem_str(src).unwrap()
+        RuleSet::from_cotomet_str(src).unwrap()
     }
 
     fn run(src: &str, rules_src: &str) -> RewriteResult {
@@ -300,19 +300,6 @@ mod tests {
             res.output,
             "Write `@kind(x)` first.\n\n```tmt\n@kind(x)\n```\n\n::kind(real)\n"
         );
-    }
-
-    #[test]
-    fn a_caret_is_matched_by_its_name_or_lack_of_one() {
-        let src = "A ^(n1) and ^footnote(n2) and ^other(n3).\n";
-        let res = run(
-            src,
-            r#"
-            plain:  { match: "^(?())",             replace: { head: "@ftn" } }
-            named:  { match: "^footnote(?())",     replace: { head: "@ftn" } }
-        "#,
-        );
-        assert_eq!(res.output, "A @ftn(n1) and @ftn(n2) and ^other(n3).\n");
     }
 
     #[test]

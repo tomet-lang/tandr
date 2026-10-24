@@ -1,6 +1,6 @@
 //! Rule definitions for tandr (.tandr files).
 //!
-//! Style A: Map-based motem syntax:
+//! Style A: Map-based cotomet syntax:
 //! ```tmt
 //! rule_name: {
 //!     description: "..."
@@ -262,9 +262,9 @@ impl RuleSet {
         }
     }
 
-    /// Parses a `.tandr` string written in motem map syntax.
-    pub fn from_motem_str(src: &str) -> anyhow::Result<Self> {
-        let map: BTreeMap<String, RuleDef> = motem::from_str(src)
+    /// Parses a `.tandr` string written in cotomet map syntax.
+    pub fn from_cotomet_str(src: &str) -> anyhow::Result<Self> {
+        let map: BTreeMap<String, RuleDef> = cotomet::from_str(src)
             .map_err(|e| anyhow::anyhow!("Failed to parse .tandr rules: {e}"))?;
 
         let rules = map
@@ -281,7 +281,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_style_a_motem_rules() {
+    fn parses_style_a_cotomet_rules() {
         let src = r#"
             promote_meta_type: {
                 description: "Promote meta.type to kind"
@@ -296,7 +296,7 @@ mod tests {
             }
         "#;
 
-        let rule_set = RuleSet::from_motem_str(src).expect("should parse rules");
+        let rule_set = RuleSet::from_cotomet_str(src).expect("should parse rules");
         assert_eq!(rule_set.rules.len(), 2);
 
         let r1 = rule_set
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn replace_is_a_template_or_a_map_of_parts() {
-        let rule_set = RuleSet::from_motem_str(
+        let rule_set = RuleSet::from_cotomet_str(
             r#"
             whole: { match: "@a", replace: "@b" }
             parts: { match: "@a", replace: { head: "::a", args: "", after: "\n" } }
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn a_part_that_is_not_one_is_refused_by_name() {
-        let err = RuleSet::from_motem_str(r#"r: { match: "@a", replace: { tail: "x" } }"#)
+        let err = RuleSet::from_cotomet_str(r#"r: { match: "@a", replace: { tail: "x" } }"#)
             .unwrap_err()
             .to_string();
         assert!(err.contains("tail"), "{err}");
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn compiling_reports_every_problem_in_the_set() {
-        let rule_set = RuleSet::from_motem_str(
+        let rule_set = RuleSet::from_cotomet_str(
             r#"
             a: { match: "@a", where: "?(x) == 1", replace: "?(y)" }
             b: { match: "nonsense" }

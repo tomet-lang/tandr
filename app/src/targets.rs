@@ -89,7 +89,7 @@ mod tests {
         fs::create_dir_all(dir.join("notes")).unwrap();
         fs::write(
             dir.join("default.config.tmt"),
-            "@kind(config)\n@config{ workspace: { unswept: list(\"frozen\") } }\n",
+            "::kind(config)\n::config{ workspace: { unswept: list(\"frozen\") } }\n",
         )
         .unwrap();
         for f in ["a.tmt", "notes/b.tmt", "frozen/c.tmt"] {

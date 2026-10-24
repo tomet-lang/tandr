@@ -8,7 +8,7 @@ use tomet_semantics::classify_std_lenient;
 use tomet_tree::for_each_element;
 
 use crate::pattern::{
-    ArgEntryPattern, ElementPattern, Pattern, SigilKind, SlotPattern, TagPattern, ValuePattern,
+    ArgEntryPattern, ElementPattern, Pattern, SlotPattern, TagPattern, ValuePattern,
 };
 
 /// Map of captured variable names to their extracted string representations.
@@ -47,36 +47,24 @@ pub fn find_matches(doc: &Document, pattern: &Pattern, src: &str) -> Vec<MatchRe
 pub fn match_element(pat: &ElementPattern, el: &Element, src: &str) -> Option<Bindings> {
     let mut bindings = Bindings::new();
 
-    // 1. Sigil and tag name matching
-    let caret = el.sigil.is_caret();
-    if (pat.sigil == SigilKind::Caret) != caret {
+    // 1. Sigil and tag name matching: a pattern starts with `@`, so it never matches a
+    // `::name` declaration about the document, which is not content.
+    if el.sigil.is_document() {
         return None;
     }
-    // A caret may have no name (`^(id)`); an `@` element always does.
-    let tag_name: Option<String> = if caret {
-        el.sigil.caret_target_kind().map(|n| n.name.clone())
-    } else if let Some(name) = el.sigil.name() {
-        Some(name.name.clone())
-    } else {
-        Some(classify_std_lenient(el).as_str().to_string())
+    let tag_name: String = match el.sigil.name() {
+        Some(name) => name.name.clone(),
+        None => classify_std_lenient(el).as_str().to_string(),
     };
 
     match &pat.tag {
         TagPattern::Exact(expected) => {
-            if !tag_name
-                .as_deref()
-                .is_some_and(|t| t.eq_ignore_ascii_case(expected))
-            {
-                return None;
-            }
-        }
-        TagPattern::Unnamed => {
-            if tag_name.is_some() {
+            if !tag_name.eq_ignore_ascii_case(expected) {
                 return None;
             }
         }
         TagPattern::Var(var_name) => {
-            bindings.insert(var_name.clone(), tag_name?);
+            bindings.insert(var_name.clone(), tag_name);
         }
         TagPattern::Any => {}
     }

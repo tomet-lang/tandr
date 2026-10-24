@@ -1,4 +1,4 @@
-// Sample tandr rules written in motem syntax (Style A)
+// Sample tandr rules written in cotomet syntax (Style A)
 //
 // The `where:` guards are commented out: tandr refuses a rule with a `where`
 // until it is implemented, rather than apply the rule more broadly than it says.

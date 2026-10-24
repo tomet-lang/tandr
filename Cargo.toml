@@ -17,8 +17,8 @@ license = "MIT OR Apache-2.0"
 tandr-core = { path = "crates/tandr-core" }
 tandr-cli = { path = "app" }
 
-#= Tomet / Motem ecosystem
-motem = { git = "https://github.com/tomet-lang/tomet.git" }
+#= Tomet / Cotomet ecosystem
+cotomet = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-config = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-indexer = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-load-config = { git = "https://github.com/tomet-lang/tomet.git" }
@@ -35,18 +35,6 @@ clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 walkdir = "2"
-
-[patch."https://github.com/tomet-lang/tomet.git"]
-motem = { path = "../tomet/crates/motem" }
-tomet-config = { path = "../tomet/crates/tomet-config" }
-tomet-indexer = { path = "../tomet/crates/tomet-workspace-indexer" }
-tomet-load-config = { path = "../tomet/crates/tomet-load-config" }
-tomet-ast = { path = "../tomet/crates/tomet-syntax-ast" }
-tomet-cst = { path = "../tomet/crates/tomet-syntax-cst" }
-tomet-parser = { path = "../tomet/crates/tomet-syntax-parser" }
-tomet-edit = { path = "../tomet/crates/tomet-edit" }
-tomet-semantics = { path = "../tomet/crates/tomet-semantics" }
-tomet-tree = { path = "../tomet/crates/tomet-syntax-tree" }
 
 [profile.release]
 opt-level = 3

@@ -3,7 +3,7 @@
 //! Core rule engine, pattern matcher, and rewriter for Tomet.
 //!
 //! Tandr searches and transforms Tomet document structures using patterns
-//! defined in motem (`.tandr`) configuration files.
+//! defined in cotomet (`.tandr`) configuration files.
 
 pub mod cst;
 pub mod hole;

@@ -107,15 +107,6 @@ mod tests {
     }
 
     #[test]
-    fn a_caret_has_the_caret_and_its_name_as_the_head() {
-        let src = "A ^(n1) and ^footnote(n2) end.\n";
-        let ix = index(src);
-        assert_eq!(&src[ix.get(2..7).unwrap().head.clone()], "^");
-        assert_eq!(&src[ix.get(12..25).unwrap().head.clone()], "^footnote");
-        assert_eq!(ix.get(2..7).unwrap().data, None);
-    }
-
-    #[test]
     fn a_range_that_is_not_an_element_has_no_parts() {
         let ix = index("@a\n");
         assert!(ix.get(0..1).is_none());

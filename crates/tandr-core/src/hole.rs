@@ -1,7 +1,7 @@
 //! The hole syntax shared by patterns and templates.
 //!
 //! A hole is a sigil followed by a group, like every other tomet construct
-//! (`#(id)`, `^(id)`, `@ftn(id)`):
+//! (`#(id)`, `@ftn(id)`):
 //!
 //! - `?(name)` binds (in a pattern) or inserts (in a template) the thing in
 //!   that place;

@@ -9,7 +9,7 @@ use tandr_core::{RuleSet, apply_rule_set};
     name = "tandr",
     version,
     about = "Structural search, rewrite, and formatting engine for Tomet",
-    long_about = "tandr transforms Tomet document structures using patterns defined in motem (.tandr) rule files."
+    long_about = "tandr transforms Tomet document structures using patterns defined in cotomet (.tandr) rule files."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -65,7 +65,7 @@ fn main() -> anyhow::Result<()> {
             let content = std::fs::read_to_string(&rules).map_err(|e| {
                 anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display())
             })?;
-            let rule_set = RuleSet::from_motem_str(&content)?;
+            let rule_set = RuleSet::from_cotomet_str(&content)?;
             if let Err(errors) = rule_set.compile() {
                 for e in &errors {
                     eprintln!("error: {e}");
@@ -92,7 +92,7 @@ fn main() -> anyhow::Result<()> {
             let rule_content = std::fs::read_to_string(&rules).map_err(|e| {
                 anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display())
             })?;
-            let rule_set = RuleSet::from_motem_str(&rule_content)?;
+            let rule_set = RuleSet::from_cotomet_str(&rule_content)?;
             // once, before any file: a bad rule is the same for every file
             if let Err(errors) = rule_set.compile() {
                 for e in &errors {

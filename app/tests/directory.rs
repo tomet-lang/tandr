@@ -16,7 +16,7 @@ fn vault(name: &str) -> (PathBuf, PathBuf) {
     fs::create_dir_all(dir.join("notes")).unwrap();
     fs::write(
         dir.join("default.config.tmt"),
-        "@kind(config)\n@config{ workspace: { unswept: list(\"frozen\") } }\n",
+        "::kind(config)\n::config{ workspace: { unswept: list(\"frozen\") } }\n",
     )
     .unwrap();
     for f in ["a.tmt", "notes/b.tmt", "frozen/c.tmt"] {
@@ -65,14 +65,15 @@ fn a_directory_is_rewritten_in_place_except_what_the_config_leaves_alone() {
         fs::read_to_string(dir.join("notes/plain.tmt")).unwrap(),
         "no kind here\n"
     );
-    // the config file is a document too, and says `@kind(config)`
+    // the config file is a document too; it already says `::kind(config)` (tomet reads no
+    // other spelling), so the rules leave it as it is
     assert!(
         fs::read_to_string(dir.join("default.config.tmt"))
             .unwrap()
             .starts_with("::kind(config)\n")
     );
     assert!(
-        text(&out.stdout).contains("3 of 4 file(s) changed"),
+        text(&out.stdout).contains("2 of 4 file(s) changed"),
         "{}",
         text(&out.stdout)
     );

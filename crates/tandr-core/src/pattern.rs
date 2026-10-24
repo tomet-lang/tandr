@@ -4,7 +4,6 @@
 //! - `@meta{ type: ?(kind), ?(...rest) }`
 //! - `@link(url: ?(u))[ ?(text) ]`
 //! - `@task(?(status))[ ?(body) ]`
-//! - `^(?(id))` and `^footnote(?(id))`, the caret elements
 //!
 //! A hole is `?(name)`, `?()` (anything, bound to nothing) or `?(...name)`
 //! (the rest of a group); see [`crate::hole`].
@@ -27,8 +26,6 @@ pub enum SigilKind {
     /// `@name`
     #[default]
     At,
-    /// `^` or `^name`, a caret reference
-    Caret,
 }
 
 /// Pattern for matching an element.
@@ -51,8 +48,6 @@ pub struct ElementPattern {
 pub enum TagPattern {
     #[default]
     Any,
-    /// A caret with no name, `^(...)`.
-    Unnamed,
     Exact(String),
     Var(String),
 }
@@ -163,7 +158,7 @@ impl<'a> PatternParser<'a> {
 
     fn parse(&mut self) -> Result<Pattern, String> {
         self.skip_ws();
-        if matches!(self.peek(), Some('@') | Some('^')) {
+        if matches!(self.peek(), Some('@')) {
             let el = self.parse_element()?;
             self.skip_ws();
             if self.pos < self.chars.len() {
@@ -176,26 +171,16 @@ impl<'a> PatternParser<'a> {
             Ok(Pattern::Element(el))
         } else {
             Err(format!(
-                "Pattern must start with '@' or '^' (got {:?})",
+                "Pattern must start with '@' (got {:?})",
                 self.peek()
             ))
         }
     }
 
     fn parse_element(&mut self) -> Result<ElementPattern, String> {
-        let sigil = if self.peek() == Some('^') {
-            self.bump();
-            SigilKind::Caret
-        } else {
-            self.expect('@')?;
-            SigilKind::At
-        };
-        let tag = match sigil {
-            SigilKind::At => self.parse_tag()?,
-            // `^(...)` has no name; `^name(...)` and `^?(t)(...)` do
-            SigilKind::Caret if self.peek() == Some('(') => TagPattern::Unnamed,
-            SigilKind::Caret => self.parse_tag()?,
-        };
+        self.expect('@')?;
+        let sigil = SigilKind::At;
+        let tag = self.parse_tag()?;
 
         let mut el = ElementPattern {
             sigil,
@@ -650,18 +635,6 @@ mod tests {
             let err = parse_pattern(src).unwrap_err();
             assert!(err.contains(hint), "{src}: {err}");
         }
-    }
-
-    #[test]
-    fn a_caret_element_is_a_pattern() {
-        let Pattern::Element(el) = parse_pattern("^(?(id))").unwrap();
-        assert_eq!(el.sigil, SigilKind::Caret);
-        assert_eq!(el.tag, TagPattern::Unnamed);
-        let Pattern::Element(el) = parse_pattern("^footnote(?(id))").unwrap();
-        assert_eq!(el.sigil, SigilKind::Caret);
-        assert_eq!(el.tag, TagPattern::Exact("footnote".to_string()));
-        let Pattern::Element(el) = parse_pattern("^?(t)(?())").unwrap();
-        assert_eq!(el.tag, TagPattern::Var("t".to_string()));
     }
 
     #[test]
