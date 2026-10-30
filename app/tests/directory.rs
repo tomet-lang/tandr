@@ -323,3 +323,37 @@ fn format_json_needs_check_or_in_place() {
     assert!(out.stdout.is_empty());
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_rewrite_that_would_not_parse_is_not_written_and_the_rest_still_are() {
+    let (dir, _) = vault("breaks");
+    // the rest ends in a line comment and the template closes the group on the same line
+    let broken = "@m{\n  type: x\n  a: 1 // about a\n}\n";
+    fs::write(dir.join("notes/broken.tmt"), broken).unwrap();
+    let swallow = dir.join("swallow.tandr");
+    fs::write(
+        &swallow,
+        r#"
+        kind: { match: "@kind", replace: { head: "::kind" } }
+        swallow: { match: "@m{ type: ?(t), ?rest(r) }", replace: "@n{ ${hole.r} }" }
+        "#,
+    )
+    .unwrap();
+
+    let out = tandr(&swallow, &["-i"], &[&dir]);
+    assert_eq!(code(&out), Some(2), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stderr).contains("rule 'swallow'"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("notes/broken.tmt")).unwrap(),
+        broken
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("a.tmt")).unwrap(),
+        "::kind(note)\n\nbody\n"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}

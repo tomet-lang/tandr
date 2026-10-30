@@ -132,7 +132,8 @@ fn apply_edits(text: &mut String, edits: Vec<Edit>) {
 /// Applies all rules in `rule_set` to `src`.
 ///
 /// The rules are checked first, all of them, and none is applied if any is
-/// wrong. Each rule then sees the text the rules before it left.
+/// wrong. Each rule then sees the text the rules before it left, and the text it
+/// leaves must still parse: if it does not, this is an error and nothing is returned.
 pub fn apply_rule_set(src: &str, rule_set: &RuleSet) -> Result<RewriteResult> {
     let rules = rule_set
         .compile()
@@ -184,7 +185,18 @@ pub fn apply_rule_set(src: &str, rule_set: &RuleSet) -> Result<RewriteResult> {
             accepted.extend(edits);
             total_changes += 1;
         }
+        if accepted.is_empty() {
+            continue;
+        }
         apply_edits(&mut current_text, accepted);
+        // A template can break what it is put into (a rest that ends in a `//` comment
+        // swallows the `}` after it). Say which rule did it, and write nothing.
+        if let Err(e) = parse_document(&current_text) {
+            anyhow::bail!(
+                "rule '{}' made a document that does not parse ({e}); nothing is written",
+                rule.name
+            );
+        }
     }
 
     let modified = current_text != src;
@@ -401,6 +413,21 @@ mod tests {
         assert_eq!(res.output, "<@box[ x ]>\n");
         assert_eq!(res.changes_count, 1);
         assert!(res.warnings[0].contains("overlaps"), "{:?}", res.warnings);
+    }
+
+    #[test]
+    fn a_rewrite_that_breaks_the_document_is_an_error_naming_the_rule() {
+        // the rest ends in a line comment, and the template puts `}` on the same line
+        let src = "@m{\n  type: x\n  a: 1 // about a\n}\n";
+        let rules = RuleSet::from_cotomet_str(
+            r#"
+            swallow: { match: "@m{ type: ?(t), ?rest(r) }", replace: "@n{ ${hole.r} }" }
+        "#,
+        )
+        .unwrap();
+        let err = apply_rule_set(src, &rules).unwrap_err().to_string();
+        assert!(err.contains("rule 'swallow'"), "{err}");
+        assert!(err.contains("nothing is written"), "{err}");
     }
 
     #[test]
