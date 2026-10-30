@@ -215,8 +215,8 @@ mod tests {
             src,
             r#"
             promote_meta: {
-                match: "@meta{ type: ?(k), ?(...rest) }"
-                replace: "@kind(?(k))\n@meta{ ?(...rest) }"
+                match: "@meta{ type: ?(k), ?rest(rest) }"
+                replace: "@kind(${hole.k})\n@meta{ ${hole.rest} }"
             }
         "#,
         );
@@ -235,8 +235,8 @@ mod tests {
             src,
             r#"
             promote_meta: {
-                match: "@meta{ type: ?(k), ?(...rest) }"
-                replace: { before: "@kind(?(k))\n", data: "{ ?(...rest) }" }
+                match: "@meta{ type: ?(k), ?rest(rest) }"
+                replace: { before: "@kind(${hole.k})\n", data: "{ ${hole.rest} }" }
             }
         "#,
         );
@@ -254,13 +254,50 @@ mod tests {
             r#"
             add_rel: {
                 match: "@link(url: ?(u))[ ?(t) ]"
-                replace: "@link(url: ?(u), rel: \"external\")[ ?(t) ]"
+                replace: "@link(url: ${hole.u}, rel: \"external\")[ ${hole.t} ]"
             }
         "#,
         );
         assert_eq!(
             res.output,
             "Read @link(url: \"https://example.com\", rel: \"external\")[ Click Here ] now!\n"
+        );
+    }
+
+    #[test]
+    fn an_element_hole_matches_any_tag_and_inserts_it() {
+        let src = "@note(a: 1)[ x ] and @warn(a: 2)[ y ] and @link[ z ]\n";
+        let res = run(
+            src,
+            r#"
+            tag_all: {
+                match: "?element(t, a: ?(v))"
+                replace: { head: "@${hole.t}-v${hole.v}" }
+            }
+        "#,
+        );
+        // `@link` has no `a`, so it is left alone
+        assert_eq!(
+            res.output,
+            "@note-v1(a: 1)[ x ] and @warn-v2(a: 2)[ y ] and @link[ z ]\n"
+        );
+    }
+
+    #[test]
+    fn a_declaration_hole_matches_declarations_only() {
+        let src = "::kind(config)\n::meta{ id: x }\n\n@meta{ id: y }\n";
+        let res = run(
+            src,
+            r#"
+            note: {
+                match: "?declaration(t){ id: ?(i) }"
+                replace: { before: "// ${hole.t} ${hole.i}\n" }
+            }
+        "#,
+        );
+        assert_eq!(
+            res.output,
+            "::kind(config)\n// meta x\n::meta{ id: x }\n\n@meta{ id: y }\n"
         );
     }
 
@@ -358,7 +395,7 @@ mod tests {
         let res = run(
             "@box[ @box[ x ] ]\n",
             r#"
-            r: { match: "@box[ ?(c) ]", replace: "<?(c)>" }
+            r: { match: "@box[ ?(c) ]", replace: "<${hole.c}>" }
         "#,
         );
         assert_eq!(res.output, "<@box[ x ]>\n");
@@ -373,7 +410,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@t(a: ?(a), b: ?(b)){ s: ?(s), l: ?(l) }", replace: "@u(?(a), ?(b), ?(s), ?(l))" }
+            r: { match: "@t(a: ?(a), b: ?(b)){ s: ?(s), l: ?(l) }", replace: "@u(${hole.a}, ${hole.b}, ${hole.s}, ${hole.l})" }
         "#,
         );
         assert_eq!(res.output, "@u(1.50, x, \"q\\\"z\", list(1, 2))\n");
@@ -385,7 +422,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@m{ type: ?(t), ?(...rest) }", replace: "@k(?(t)) @m{ ?(...rest) }" }
+            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@k(${hole.t}) @m{ ${hole.rest} }" }
         "#,
         );
         assert_eq!(res.output, "@k(a) @m{ k: 0x10, \"w\": \"v\" }\n");
@@ -397,7 +434,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "::meta{ id: ?(i) }", replace: "::meta{ id: ?(i), v: 2 }" }
+            r: { match: "::meta{ id: ?(i) }", replace: "::meta{ id: ${hole.i}, v: 2 }" }
         "#,
         );
         assert_eq!(
@@ -434,7 +471,7 @@ mod tests {
         let res = run(
             "@t(a: 1, b: 2)\n",
             r#"
-            r: { match: "@t(a: ?(k), b: ?(kind))", replace: "@t(?(kind), ?(k))" }
+            r: { match: "@t(a: ?(k), b: ?(kind))", replace: "@t(${hole.kind}, ${hole.k})" }
         "#,
         );
         assert_eq!(res.output, "@t(2, 1)\n");
@@ -445,8 +482,8 @@ mod tests {
         let src = "@kind(x)\n";
         for rules_src in [
             r#"r: { match: "@kind", where: "?(a) == 1", replace: { head: "::kind" } }"#,
-            r#"r: { match: "@kind", replace: "@k(?(missing))" }"#,
-            r#"r: { match: "@kind", replace: { head: "@k(?(missing))" } }"#,
+            r#"r: { match: "@kind", replace: "@k(${hole.missing})" }"#,
+            r#"r: { match: "@kind", replace: { head: "@k(${hole.missing})" } }"#,
             r#"r: { match: "@kind", replace: {} }"#,
             r#"r: { match: "kind" }"#,
         ] {

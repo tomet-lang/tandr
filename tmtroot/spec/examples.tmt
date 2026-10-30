@@ -1,5 +1,5 @@
+::id(spec.examples)
 ::meta{
-  id: spec.examples
   title: "tandr 整形具体例カタログ (Showcase)"
 }
 
@@ -17,9 +17,9 @@ Status: ドラフト。2026-10-20 作成。見出し・関係セレクタ・`whe
 ```tmt
 promote_meta_type: {
     description: "@meta{type: ...} を @kind(...) へ昇格し、残りのメタデータを維持"
-    match: "@meta{ type: ?(k), ?(...rest) }"
+    match: "@meta{ type: ?(k), ?rest(rest) }"
     where: "?(k) != 'raw'"
-    replace: "@kind(?(k))\n@meta{ ?(...rest) }"
+    replace: "@kind(${hole.k})\n@meta{ ${hole.rest} }"
 }
 ```
 
@@ -40,8 +40,8 @@ promote_meta_type: {
 ```tmt
 sort_tags: {
     description: "メタデータの tags リストをソートして重複排除"
-    match: "@meta{ tags: ?(tags), ?(...rest) }"
-    replace: "@meta{ tags: ?(tags | unique | sort), ?(...rest) }"
+    match: "@meta{ tags: ?(tags), ?rest(rest) }"
+    replace: "@meta{ tags: ${hole.tags | unique | sort}, ${hole.rest} }"
 }
 ```
 
@@ -53,7 +53,7 @@ sort_tags: {
 ensure_meta_header: {
     description: "先頭に @meta がない場合、デフォルトのメタデータを補完"
     match: "!@meta + =[ ?(first_title) ]"
-    replace: "@meta{\n  title: ?(first_title)\n  draft: true\n}\n\n=[ ?(first_title) ]"
+    replace: "@meta{\n  title: ${hole.first_title}\n  draft: true\n}\n\n=[ ${hole.first_title} ]"
 }
 ```
 
@@ -66,9 +66,9 @@ ensure_meta_header: {
 ```tmt
 add_external_link_attributes: {
     description: "外部リンクにセキュリティ属性を自動付与"
-    match: "@link(url: ?(u), ?(...rest))[ ?(text) ]"
+    match: "@link(url: ?(u), ?rest(rest))[ ?(text) ]"
     where: "?(u | test('^https?://')) && !has_key(?(rest), 'rel')"
-    replace: "@link(url: ?(u), rel: 'external', target: '_blank', ?(...rest))[ ?(text) ]"
+    replace: "@link(url: ${hole.u}, rel: 'external', target: '_blank', ${hole.rest})[ ${hole.text} ]"
 }
 ```
 
@@ -81,7 +81,7 @@ autolink_raw_urls: {
     description: "プロトコル付き URL を @link 要素でラップ"
     match: "?(raw_url)"
     where: "?(raw_url | test('^https?://[a-zA-Z0-9./?=#_-]+$'))"
-    replace: "@link(url: ?(raw_url))[ ?(raw_url) ]"
+    replace: "@link(url: ${hole.raw_url})[ ${hole.raw_url} ]"
 }
 ```
 
@@ -95,7 +95,7 @@ autolink_raw_urls: {
 demote_subsections: {
     description: "特定セクション配下の H1 を H2 へ降格"
     match: "=[ Main ] >> =[ ?(sub_title) ]"
-    replace: "==[ ?(sub_title) ]"
+    replace: "==[ ${hole.sub_title} ]"
 }
 ```
 
@@ -108,7 +108,7 @@ auto_heading_ids: {
     description: "見出しにタイトル由来の slug ID を付与"
     match: "=[ ?(title) ]"
     where: "!has_id()"
-    replace: "=[ ?(title) ]#( ?(title | slug) )"
+    replace: "=[ ${hole.title} ]#( ${hole.title | slug} )"
 }
 ```
 
@@ -126,14 +126,14 @@ convert_list_tasks_to_element: {
     description: "リスト形式のタスクを @task 記法へ正規化"
     match: "- (?(state)) [ ?(body) ]"
     where: "?(state) in list(' ', '', 'todo')"
-    replace: "@task(todo)[ ?(body | trim) ]"
+    replace: "@task(todo)[ ${hole.body | trim} ]"
 }
 
 convert_done_tasks_to_element: {
     description: "完了タスクの正規化"
     match: "- (?(state)) [ ?(body) ]"
     where: "?(state) in list('x', 'X', 'done')"
-    replace: "@task(done)[ ?(body | trim) ]"
+    replace: "@task(done)[ ${hole.body | trim} ]"
 }
 ```
 
@@ -145,7 +145,7 @@ convert_done_tasks_to_element: {
 archive_completed_tasks: {
     description: "完了タスクをセクション末尾へ移動"
     match: "=[ ?(sec) ] >> @task(done)[ ?(body) ]"
-    move_to: "=[ ?(sec) ] >> ==[ Done Archive ]"
+    move_to: "=[ ${hole.sec} ] >> ==[ Done Archive ]"
 }
 ```
 
@@ -159,7 +159,7 @@ archive_completed_tasks: {
 default_code_language: {
     description: "言語指定のないコードブロックに tomet を指定"
     match: "```\n?(code)\n```"
-    replace: "```tomet\n?(code)\n```"
+    replace: "```tomet\n${hole.code}\n```"
 }
 ```
 
@@ -171,13 +171,13 @@ default_code_language: {
 format_json_blocks: {
     description: "JSON コードブロックを prettier で整形"
     match: "```json\n?(code)\n```"
-    replace: "```json\n?(code | sh('prettier --parser json'))\n```"
+    replace: "```json\n${hole.code | sh('prettier --parser json')}\n```"
 }
 
 format_rust_blocks: {
     description: "Rust コードブロックを rustfmt で整形"
     match: "```rust\n?(code)\n```"
-    replace: "```rust\n?(code | sh('rustfmt --emit stdout'))\n```"
+    replace: "```rust\n${hole.code | sh('rustfmt --emit stdout')}\n```"
 }
 ```
 
@@ -191,7 +191,7 @@ format_rust_blocks: {
 normalize_zenkaku: {
     description: "本文中の全角文字を Python の unicodedata.normalize で変換"
     match: "?(text)"
-    replace: "?(text | py('unicodedata:normalize', 'NFKC'))"
+    replace: "${hole.text | py('unicodedata:normalize', 'NFKC')}"
 }
 ```
 
@@ -204,7 +204,7 @@ auto_wrap_terms: {
     description: "キーワードを @term 要素でマークアップ"
     match: "?(word)"
     where: "?(word) in list('tomet', 'twrit', 'tandr', 'sisho')"
-    replace: "@term[?(word)]"
+    replace: "@term[${hole.word}]"
 }
 ```
 
@@ -218,7 +218,7 @@ auto_wrap_terms: {
 convert_blockquote_to_callout: {
     description: "GitHub スタイルのアラートを @callout 要素へ変換"
     match: "> [!?(kind)]\n> ?(body)"
-    replace: "@callout(type: ?(kind | lower))[ ?(body) ]"
+    replace: "@callout(type: ${hole.kind | lower})[ ${hole.body} ]"
 }
 ```
 

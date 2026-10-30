@@ -1,0 +1,6 @@
+::kind(config)
+::id(doc-vault-config)
+::workspace{
+  // examples/sample.tmt is the old-form input the example rules rewrite.
+  unswept: list( "examples" )
+}

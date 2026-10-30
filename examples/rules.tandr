@@ -5,20 +5,20 @@
 
 promote_meta_type: {
     description: "旧式の @meta{type: ...} を @kind(...) へ昇格する"
-    match: "@meta{ type: ?(kind), ?(...rest) }"
+    match: "@meta{ type: ?(kind), ?rest(rest) }"
     // where: "?(kind) != 'raw'"
-    replace: "@kind(?(kind))\n@meta{ ?(...rest) }"
+    replace: "@kind(${hole.kind})\n@meta{ ${hole.rest} }"
 }
 
 add_external_rel_to_links: {
     description: "外部リンクに rel 属性を付与する"
     match: "@link(url: ?(u))[ ?(text) ]"
     // where: "?(u | test('^https?://'))"
-    replace: "@link(url: ?(u), rel: \"external\")[ ?(text) ]"
+    replace: "@link(url: ${hole.u}, rel: \"external\")[ ${hole.text} ]"
 }
 
 normalize_todo_tasks: {
     description: "@task(todo) を @task(status: 'todo') に統一する"
     match: "@task(?(status))[ ?(body) ]"
-    replace: "@task(status: ?(status))[ ?(body) ]"
+    replace: "@task(status: ${hole.status})[ ${hole.body} ]"
 }

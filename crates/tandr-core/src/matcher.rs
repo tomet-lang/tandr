@@ -240,10 +240,6 @@ fn match_value(
             Value::Bool(b) => b == expected,
             _ => false,
         },
-        ValuePattern::Ident(expected) => match actual {
-            Value::String(s) => s == expected,
-            _ => false,
-        },
     }
 }
 
@@ -296,7 +292,7 @@ mod tests {
     fn matches_meta_and_captures_fields() {
         let src = "@meta{ type: \"article\", title: \"My Post\", author: \"Alice\" }\n";
         let doc = parse_document(src).unwrap();
-        let pat = parse_pattern("@meta{ type: ?(kind), ?(...rest) }").unwrap();
+        let pat = parse_pattern("@meta{ type: ?(kind), ?rest(rest) }").unwrap();
 
         let matches = find_matches(
             &doc,

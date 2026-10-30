@@ -43,7 +43,7 @@ pub struct RuleDef {
     /// Optional condition / guard expression (e.g. `?kind != "raw"`).
     pub r#where: Option<String>,
 
-    /// What to put in place of the match (e.g. `@kind(?(kind))`).
+    /// What to put in place of the match (e.g. `@kind(${hole.kind})`).
     pub replace: Option<Replace>,
 }
 
@@ -208,7 +208,7 @@ impl RuleSet {
                         for n in t.names() {
                             if pattern.is_some() && !bound.contains(n) {
                                 problems.push(format!(
-                                    "{what} inserts ?({n}), which the pattern does not bind"
+                                    "{what} inserts ${{hole.{n}}}, which the pattern does not bind"
                                 ));
                             }
                         }
@@ -286,14 +286,14 @@ mod tests {
         let src = r#"
             promote_meta_type: {
                 description: "Promote meta.type to kind"
-                match: "@meta{ type: ?(kind), ?(...rest) }"
+                match: "@meta{ type: ?(kind), ?rest(rest) }"
                 where: "?(kind) != 'raw'"
-                replace: "@kind(?(kind)) @meta{ ?(...rest) }"
+                replace: "@kind(${hole.kind}) @meta{ ${hole.rest} }"
             }
 
             clean_drafts: {
                 match: "=[ ?(title) ] >> @task(?(status))[ ?(body) ]"
-                replace: "@task(draft)[ ?(body) ]"
+                replace: "@task(draft)[ ${hole.body} ]"
             }
         "#;
 
@@ -309,12 +309,12 @@ mod tests {
             r1.def.description.as_deref(),
             Some("Promote meta.type to kind")
         );
-        assert_eq!(r1.def.r#match, "@meta{ type: ?(kind), ?(...rest) }");
+        assert_eq!(r1.def.r#match, "@meta{ type: ?(kind), ?rest(rest) }");
         assert_eq!(r1.def.r#where.as_deref(), Some("?(kind) != 'raw'"));
         assert_eq!(
             r1.def.replace,
             Some(Replace::Template(
-                "@kind(?(kind)) @meta{ ?(...rest) }".to_string()
+                "@kind(${hole.kind}) @meta{ ${hole.rest} }".to_string()
             ))
         );
 
@@ -380,7 +380,7 @@ mod tests {
     fn compiling_reports_every_problem_in_the_set() {
         let rule_set = RuleSet::from_cotomet_str(
             r#"
-            a: { match: "@a", where: "?(x) == 1", replace: "?(y)" }
+            a: { match: "@a", where: "?(x) == 1", replace: "${hole.y}" }
             b: { match: "nonsense" }
         "#,
         )
@@ -395,7 +395,7 @@ mod tests {
         assert!(
             errors
                 .iter()
-                .any(|e| e.contains("rule 'a'") && e.contains("?(y)")),
+                .any(|e| e.contains("rule 'a'") && e.contains("hole.y")),
             "{errors:?}"
         );
         assert!(errors.iter().any(|e| e.contains("rule 'b'")), "{errors:?}");

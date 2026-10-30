@@ -88,8 +88,8 @@ mod tests {
         fs::create_dir_all(dir.join("frozen")).unwrap();
         fs::create_dir_all(dir.join("notes")).unwrap();
         fs::write(
-            dir.join("default.config.tmt"),
-            "::kind(config)\n::config{ workspace: { unswept: list(\"frozen\") } }\n",
+            dir.join(tomet_load_config::VAULT_CONFIG_FILE),
+            "::kind(config)\n::workspace{ unswept: list(\"frozen\") }\n",
         )
         .unwrap();
         for f in ["a.tmt", "notes/b.tmt", "frozen/c.tmt"] {
@@ -114,7 +114,7 @@ mod tests {
         assert!(r.targets.iter().all(|t| !t.named));
         assert_eq!(
             names(&r, &root),
-            ["a.tmt", "default.config.tmt", "notes/b.tmt"]
+            ["a.tmt", "notes/b.tmt", tomet_load_config::VAULT_CONFIG_FILE]
         );
         let _ = fs::remove_dir_all(&root);
     }

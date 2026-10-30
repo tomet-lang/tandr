@@ -10,15 +10,15 @@
 
 promote_meta_type: {
     description: "旧式の @meta{type: ...} を第一級の @kind(...) へ昇格する"
-    match: "@meta{ type: ?(kind), ?(...rest) }"
+    match: "@meta{ type: ?(kind), ?rest(rest) }"
     where: "?(kind) != 'raw'"
-    replace: "@kind(?(kind))\n@meta{ ?(...rest) }"
+    replace: "@kind(${hole.kind})\n@meta{ ${hole.rest} }"
 }
 
 normalize_meta_status: {
     description: "@meta{ draft: true } をステータス表記に正規化"
-    match: "@meta{ draft: true, ?(...rest) }"
-    replace: "@meta{ status: 'draft', ?(...rest) }"
+    match: "@meta{ draft: true, ?rest(rest) }"
+    replace: "@meta{ status: 'draft', ${hole.rest} }"
 }
 
 // -----------------------------------------------------------------------
@@ -27,15 +27,15 @@ normalize_meta_status: {
 
 add_external_link_attributes: {
     description: "外部リンクに rel 属性を付与して安全性を高める"
-    match: "@link(url: ?(u), ?(...rest))[ ?(text) ]"
+    match: "@link(url: ?(u), ?rest(rest))[ ?(text) ]"
     where: "?(u | test('^https?://'))"
-    replace: "@link(url: ?(u), rel: 'external', ?(...rest))[ ?(text) ]"
+    replace: "@link(url: ${hole.u}, rel: 'external', ${hole.rest})[ ${hole.text} ]"
 }
 
 canonicalize_link_keys: {
     description: "link の target キーを url キーへ統一する"
-    match: "@link(target: ?(target), ?(...rest))[ ?(text) ]"
-    replace: "@link(url: ?(target), ?(...rest))[ ?(text) ]"
+    match: "@link(target: ?(target), ?rest(rest))[ ?(text) ]"
+    replace: "@link(url: ${hole.target}, ${hole.rest})[ ${hole.text} ]"
 }
 
 // -----------------------------------------------------------------------
@@ -46,13 +46,13 @@ normalize_task_arguments: {
     description: "単一スカラの @task(todo) を明示的な引数 @task(status: 'todo') へ統一"
     match: "@task(?(status))[ ?(body) ]"
     where: "?(status) in list('todo', 'wip', 'done')"
-    replace: "@task(status: ?(status))[ ?(body) ]"
+    replace: "@task(status: ${hole.status})[ ${hole.body} ]"
 }
 
 mark_wip_tasks: {
     description: "ドラフトセクションのタスクを WIP 状態に統一"
     match: "@task(status: 'todo')[ ?(body) ]"
-    replace: "@task(status: 'wip')[ ?(body) ]"
+    replace: "@task(status: 'wip')[ ${hole.body} ]"
 }
 
 // -----------------------------------------------------------------------
@@ -62,13 +62,13 @@ mark_wip_tasks: {
 rename_note_to_callout: {
     description: "非推奨になった @note を @callout(type: 'info') に書き換える"
     match: "@note[ ?(body) ]"
-    replace: "@callout(type: 'info')[ ?(body) ]"
+    replace: "@callout(type: 'info')[ ${hole.body} ]"
 }
 
 rename_warn_to_callout: {
     description: "@warn を @callout(type: 'warning') に書き換える"
     match: "@warn[ ?(body) ]"
-    replace: "@callout(type: 'warning')[ ?(body) ]"
+    replace: "@callout(type: 'warning')[ ${hole.body} ]"
 }
 
 // -----------------------------------------------------------------------
@@ -78,5 +78,5 @@ rename_warn_to_callout: {
 wrap_raw_code_blocks: {
     description: "無名のコードブロックにデフォルト言語 tomet を付与"
     match: "```\n?(code)\n```"
-    replace: "```tomet\n?(code)\n```"
+    replace: "```tomet\n${hole.code}\n```"
 }

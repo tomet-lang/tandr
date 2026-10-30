@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use tomet_load_config::VAULT_CONFIG_FILE;
+
 const RULES: &str = r#"
 doc_kind: { match: "@kind", replace: { head: "::kind" } }
 "#;
@@ -15,8 +17,8 @@ fn vault(name: &str) -> (PathBuf, PathBuf) {
     fs::create_dir_all(dir.join("frozen")).unwrap();
     fs::create_dir_all(dir.join("notes")).unwrap();
     fs::write(
-        dir.join("default.config.tmt"),
-        "::kind(config)\n::config{ workspace: { unswept: list(\"frozen\") } }\n",
+        dir.join(VAULT_CONFIG_FILE),
+        "::kind(config)\n::workspace{ unswept: list(\"frozen\") }\n",
     )
     .unwrap();
     for f in ["a.tmt", "notes/b.tmt", "frozen/c.tmt"] {
@@ -68,7 +70,7 @@ fn a_directory_is_rewritten_in_place_except_what_the_config_leaves_alone() {
     // the config file is a document too; it already says `::kind(config)` (tomet reads no
     // other spelling), so the rules leave it as it is
     assert!(
-        fs::read_to_string(dir.join("default.config.tmt"))
+        fs::read_to_string(dir.join(VAULT_CONFIG_FILE))
             .unwrap()
             .starts_with("::kind(config)\n")
     );
@@ -182,7 +184,11 @@ fn one_file_that_fails_does_not_stop_the_rest() {
 fn a_bad_rule_is_reported_once_and_nothing_is_touched() {
     let (dir, _) = vault("badrule");
     let rules = dir.join("bad.tandr");
-    fs::write(&rules, "r: { match: \"@kind\", replace: \"?(missing)\" }\n").unwrap();
+    fs::write(
+        &rules,
+        "r: { match: \"@kind\", replace: \"${hole.missing}\" }\n",
+    )
+    .unwrap();
     let out = tandr(&rules, &["-i"], &[&dir]);
     assert!(!out.status.success());
     let err = text(&out.stderr);
