@@ -404,6 +404,23 @@ mod tests {
     }
 
     #[test]
+    fn a_literal_is_compared_as_tomet_reads_it() {
+        // a bare word and a quoted string are the same string to tomet, so to a pattern
+        let src = "@x(id: v)\n@x(id: \"v\")\n@x(ok: true)\n@x(ok: \"true\")\n";
+        let res = run(
+            src,
+            r#"
+            a: { match: "@x(id: \"v\")", replace: { head: "@same" } }
+            b: { match: "@x(ok: true)", replace: { head: "@bool" } }
+        "#,
+        );
+        assert_eq!(
+            res.output,
+            "@same(id: v)\n@same(id: \"v\")\n@bool(ok: true)\n@x(ok: \"true\")\n"
+        );
+    }
+
+    #[test]
     fn a_capture_is_the_text_as_written() {
         // bare word, escaped quote, trailing zero, a call: none may be rendered again
         let src = "@t(a: 1.50, b: x){ s: \"q\\\"z\", l: list(1, 2) }\n";
