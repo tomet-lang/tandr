@@ -10,12 +10,30 @@
       },
       "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
     },
+    ".envrc": {
+      "sha256": "3c8bdb9d52dd4e7440a504e0f43bb3a1929c06f8f4f2d4d7ef41baab974e39e2",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": "base/.envrc"
+      },
+      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+    },
     ".gitattributes": {
       "sha256": "2c4d2530e6c2f455de09b135a57ea1ec71790ccffaa4eadcdd4643ee466d76c3",
       "source": {
         "git": "https://github.com/tomet-lang/commonfiles.git",
         "rev": "main",
         "path": "base/.gitattributes"
+      },
+      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+    },
+    ".github/workflows/nix-ci.yml": {
+      "sha256": "572ebb0f03d139314ee7c638e6e6cf62b585b3bf112dd0e71dfd1905dad562bc",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": "base/.github/workflows/nix-ci.yml"
       },
       "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
     },
@@ -34,6 +52,15 @@
         "git": "https://github.com/tomet-lang/commonfiles.git",
         "rev": "main",
         "path": "base/LICENSE-MIT"
+      },
+      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+    },
+    "nix/formatter.nix": {
+      "sha256": "520fd59fc3243a1220b18ba0ce3b710de7c91a46a7d71be0e8f28d9bac55e093",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": "base/nix/formatter.nix"
       },
       "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
     }

@@ -17,3 +17,12 @@
 "LICENSE-MIT": {
   source: { upstream: commonfiles, path: "LICENSE-MIT" }
 }
+".envrc": {
+  source: { upstream: commonfiles, path: ".envrc" }
+}
+".github/workflows/nix-ci.yml": {
+  source: { upstream: commonfiles, path: ".github/workflows/nix-ci.yml" }
+}
+"nix/formatter.nix": {
+  source: { upstream: commonfiles, path: "nix/formatter.nix" }
+}
