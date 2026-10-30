@@ -32,12 +32,41 @@ tandr run -r rules.tandr target.tmt --diff
 # ファイルを直接書き換え (in-place)
 tandr run -r rules.tandr target.tmt -i
 
-# CI 用チェック (変更があれば終了コード 1)
+# CI 用チェック (何も書かず、変更があれば終了コード 1)
 tandr run -r rules.tandr target.tmt --check
+
+# 結果を JSON で受け取る (--check か -i と一緒に)
+tandr run -r rules.tandr . --check --format json
 
 # ディレクトリごと (`.tmt` を再帰的に探す)
 tandr run -r rules.tandr docs/ -i
 tandr run -r rules.tandr . --check
 ```
 
-ディレクトリは `tomet format` と同じ範囲を歩きます。`.gitignore` と、プロジェクト設定の `workspace.ignore` / `workspace.unswept`（凍結したテストコーパスなど）は対象になりません。名前を直接指定したファイルにも同じ除外がかかり、`--force` で外せます。ディレクトリには `-i`、`--diff`、`--check` のどれかが要ります。ファイルが読めない、解析できないといったときは、そのファイルを報告して残りを続け、最後に失敗の件数で終了コードを非 0 にします。
+ディレクトリは `tomet format` と同じ範囲を歩きます。`.gitignore` と、プロジェクト設定の `workspace.ignore` / `workspace.unswept`（凍結したテストコーパスなど）は対象になりません。名前を直接指定したファイルにも同じ除外がかかり、`--force` で外せます。ディレクトリには `-i`、`--diff`、`--check` のどれかが要ります。ファイルが読めない、解析できないといったときは、そのファイルを報告して残りを続け、最後に失敗の件数を報告して終了コード 2 にします。
+
+==[ 終了コード ]
+
+呼び出し側(CI や sisho)が頼ってよい約束です。
+
+- `0`: 変更はありません。`--check` を付けない実行は、書き換えがあっても `0` です。
+- `1`: `--check` で、書き換わるファイルが 1 つ以上ありました。
+- `2`: エラーです。不正なルールファイル、存在しない・読めない・解析できない・書き込めないファイル、不正なコマンドライン。1 つでも失敗があれば、書き換わるファイルがあっても `2` です(失敗した実行は結果を知らないため)。
+
+==[ JSON 出力 ]
+
+`--format json` は、標準出力に次の JSON を 1 つだけ出します。診断(警告・エラー)は標準エラーのままです。書き換えた文書が標準出力に出ないよう、`--check` か `--in-place` が要ります(標準入力は `--check` のみ)。`--diff` とは併用できません。
+
+```json
+{
+  "changed": 2,
+  "failed": 0,
+  "files": [
+    { "path": "a.tmt", "changed": true, "changes": 1 },
+    { "path": "b.tmt", "changed": false, "changes": 0 },
+    { "path": "c.tmt", "changed": false, "changes": 0, "error": "could not be read: ..." }
+  ]
+}
+```
+
+`changed` は書き換わった(`--check` では書き換わる)ファイルの数、`failed` は `error` を持つファイルの数です。ルールファイルが不正なときは、ファイルに着く前に終了コード 2 で止まるため、JSON は出ません。

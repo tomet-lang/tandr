@@ -1,8 +1,49 @@
 mod targets;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use tandr_core::{RuleSet, apply_rule_set};
+
+/// Exit codes: what a caller (CI, sisho) can rely on.
+///
+/// `0` nothing to change; `1` `--check` found something it would change; `2` an error (a bad
+/// rule file, a target that could not be read, parsed or written, or a bad command line, which
+/// clap already reports as `2`). `2` wins over `1`: a run that failed somewhere does not know
+/// the result.
+const EXIT_CHANGED: u8 = 1;
+const EXIT_ERROR: u8 = 2;
+
+/// How `run` reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum Format {
+    /// One line per changed file, then a count.
+    Text,
+    /// One JSON document on standard output: `{ changed, failed, files: [{ path, changed,
+    /// changes, error? }] }`. Needs `--check` or `--in-place`, which keep the rewritten
+    /// documents off standard output.
+    Json,
+}
+
+/// What happened to one target, for `--format json`.
+#[derive(Serialize)]
+struct FileReport {
+    path: String,
+    changed: bool,
+    changes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct Report {
+    /// Files that were (or, under `--check`, would be) changed.
+    changed: usize,
+    /// Files that could not be read, rewritten or written.
+    failed: usize,
+    files: Vec<FileReport>,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -35,9 +76,14 @@ enum Commands {
         #[arg(short = 'i', long)]
         in_place: bool,
 
-        /// Check mode: exit with code 1 if any target would be modified
+        /// Check mode: write nothing; exit 1 if any target would be modified (0 if none, 2 on
+        /// an error)
         #[arg(long)]
         check: bool,
+
+        /// How to report: `text` (default) or `json`
+        #[arg(long, value_enum, default_value = "text", conflicts_with = "diff")]
+        format: Format,
 
         /// Show unified diff
         #[arg(long)]
@@ -57,9 +103,17 @@ enum Commands {
     },
 }
 
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+fn main() -> ExitCode {
+    match run(Cli::parse()) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            ExitCode::from(EXIT_ERROR)
+        }
+    }
+}
 
+fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
         Commands::CheckRules { rules } => {
             let content = std::fs::read_to_string(&rules).map_err(|e| {
@@ -86,9 +140,20 @@ fn main() -> anyhow::Result<()> {
             targets,
             in_place,
             check,
+            format,
             diff,
             force,
         } => {
+            let json = format == Format::Json;
+            if json && !(check || in_place) {
+                anyhow::bail!(
+                    "--format json needs --check or --in-place: without them the rewritten \
+                     document goes to standard output, where the report is"
+                );
+            }
+            if json && targets.is_empty() && !check {
+                anyhow::bail!("--format json on standard input needs --check");
+            }
             let rule_content = std::fs::read_to_string(&rules).map_err(|e| {
                 anyhow::anyhow!("Failed to read rule file {}: {e}", rules.display())
             })?;
@@ -101,7 +166,7 @@ fn main() -> anyhow::Result<()> {
                 anyhow::bail!("{} problem(s) in {}", errors.len(), rules.display());
             }
 
-            let mut any_modified = false;
+            let mut files: Vec<FileReport> = Vec::new();
 
             if targets.is_empty() {
                 // Read from stdin if no targets given
@@ -112,14 +177,19 @@ fn main() -> anyhow::Result<()> {
                 for w in &res.warnings {
                     eprintln!("warning: <stdin>: {w}");
                 }
-                if diff {
+                if json {
+                    // the report is the output; the rewritten document is not
+                } else if diff {
                     print_diff("<stdin>", &buffer, &res.output);
                 } else {
                     print!("{}", res.output);
                 }
-                if res.modified {
-                    any_modified = true;
-                }
+                files.push(FileReport {
+                    path: "<stdin>".to_string(),
+                    changed: res.modified,
+                    changes: res.changes_count,
+                    error: None,
+                });
             } else {
                 let resolved = targets::resolve(&targets, force)?;
                 for path in &resolved.skipped {
@@ -136,64 +206,85 @@ fn main() -> anyhow::Result<()> {
                     );
                 }
 
-                let (mut changed, mut failed) = (0usize, 0usize);
                 for target in &resolved.targets {
                     let path = &target.path;
+                    let shown = path.display().to_string();
+                    let mut file = FileReport {
+                        path: shown.clone(),
+                        changed: false,
+                        changes: 0,
+                        error: None,
+                    };
                     let src = match std::fs::read_to_string(path) {
                         Ok(src) => src,
                         Err(e) => {
-                            eprintln!("error: {}: could not be read: {e}", path.display());
-                            failed += 1;
+                            eprintln!("error: {shown}: could not be read: {e}");
+                            file.error = Some(format!("could not be read: {e}"));
+                            files.push(file);
                             continue;
                         }
                     };
                     let res = match apply_rule_set(&src, &rule_set) {
                         Ok(res) => res,
                         Err(e) => {
-                            eprintln!("error: {}: {e}", path.display());
-                            failed += 1;
+                            eprintln!("error: {shown}: {e}");
+                            file.error = Some(e.to_string());
+                            files.push(file);
                             continue;
                         }
                     };
                     for w in &res.warnings {
-                        eprintln!("warning: {}: {w}", path.display());
+                        eprintln!("warning: {shown}: {w}");
                     }
+                    file.changed = res.modified;
+                    file.changes = res.changes_count;
                     if res.modified {
-                        any_modified = true;
-                        changed += 1;
-                        println!("~ {}: {} change(s)", path.display(), res.changes_count);
+                        if !json {
+                            println!("~ {shown}: {} change(s)", res.changes_count);
+                        }
 
                         if diff {
-                            print_diff(&path.display().to_string(), &src, &res.output);
+                            print_diff(&shown, &src, &res.output);
                         }
 
                         if in_place {
                             if let Err(e) = std::fs::write(path, &res.output) {
-                                eprintln!("error: {}: could not be written: {e}", path.display());
-                                failed += 1;
+                                eprintln!("error: {shown}: could not be written: {e}");
+                                file.error = Some(format!("could not be written: {e}"));
                             }
                         } else if !diff && !check {
                             print!("{}", res.output);
                         }
-                    } else if target.named && !check && !diff {
-                        println!("= {} (unchanged)", path.display());
+                    } else if target.named && !check && !diff && !json {
+                        println!("= {shown} (unchanged)");
                     }
+                    files.push(file);
                 }
-                if resolved.swept || resolved.targets.len() > 1 {
+                if !json && (resolved.swept || resolved.targets.len() > 1) {
+                    let changed = files.iter().filter(|f| f.changed).count();
                     println!("{changed} of {} file(s) changed", resolved.targets.len());
-                }
-                if failed > 0 {
-                    anyhow::bail!("{failed} file(s) failed");
                 }
             }
 
-            if check && any_modified {
-                std::process::exit(1);
+            let report = Report {
+                changed: files.iter().filter(|f| f.changed).count(),
+                failed: files.iter().filter(|f| f.error.is_some()).count(),
+                files,
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            }
+            if report.failed > 0 {
+                eprintln!("error: {} file(s) failed", report.failed);
+                return Ok(ExitCode::from(EXIT_ERROR));
+            }
+            if check && report.changed > 0 {
+                return Ok(ExitCode::from(EXIT_CHANGED));
             }
         }
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 fn print_diff(filename: &str, old: &str, new: &str) {
