@@ -429,6 +429,69 @@ mod tests {
     }
 
     #[test]
+    fn a_rest_written_one_entry_per_line_comes_back_one_per_line() {
+        let src = "@meta{\n  type: a\n  title: \"t\"\n  author: \"x\"\n}\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@meta{ type: ?(t), ?rest(rest) }", replace: "@kind(${hole.t})\n@meta{\n  ${hole.rest}\n}" }
+        "#,
+        );
+        assert_eq!(
+            res.output,
+            "@kind(a)\n@meta{\n  title: \"t\"\n  author: \"x\"\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_rest_with_an_entry_taken_out_of_the_middle_keeps_the_separators_style() {
+        let src = "@m{\n  a: 1,\n  type: x,\n  b: 2,\n  c: 3\n}\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@n{\n  ${hole.rest}\n}" }
+        "#,
+        );
+        assert_eq!(res.output, "@n{\n  a: 1,\n  b: 2,\n  c: 3\n}\n");
+    }
+
+    #[test]
+    fn a_comment_between_two_kept_entries_stays_and_one_about_a_taken_entry_goes() {
+        let src = "@m{\n  a: 1 // about a\n  type: x\n  // about b\n  b: 2\n}\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@n{\n  ${hole.rest}\n}" }
+        "#,
+        );
+        // `// about a` is a's own (it ends the entry); `// about b` sat in the gap after the
+        // taken `type`, so the rest keeps that gap's line break and indentation, not the comment
+        assert_eq!(res.output, "@n{\n  a: 1 // about a\n  b: 2\n}\n");
+
+        // two kept entries side by side keep what is between them
+        let src = "@m{ type: x\n  a: 1 // about a\n  b: 2 }\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@n{ ${hole.rest} }" }
+        "#,
+        );
+        assert_eq!(res.output, "@n{ a: 1 // about a\n  b: 2 }\n");
+    }
+
+    #[test]
+    fn the_rest_of_the_args_binds_and_is_kept_as_written() {
+        let src = "@x(a: 1, b: \"q\",\n   c: 0x10)\n";
+        let res = run(
+            src,
+            r#"
+            r: { match: "@x(a: ?(a), ?rest(r))", replace: "@y(${hole.a}; ${hole.r})" }
+        "#,
+        );
+        assert_eq!(res.output, "@y(1; b: \"q\",\n   c: 0x10)\n");
+    }
+
+    #[test]
     fn a_declaration_pattern_matches_declarations_and_not_content() {
         let src = "::kind(config)\n::meta{ id: x }\n\n@meta{ id: y }\n";
         let res = run(

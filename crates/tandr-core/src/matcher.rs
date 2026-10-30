@@ -129,20 +129,20 @@ pub fn match_element(
             matched_keys.push(field_key.as_str());
         }
 
-        // Rest capture for `{ ...?rest }`
         if let Some(rest_var) = &data_pat.rest_var {
-            let mut remaining = Vec::new();
-            for e in entries {
-                if let Entry::Pair(k, v) = e
-                    && !matched_keys.contains(&k.as_str())
-                {
-                    remaining.push(match entry_of(written, Some(k)) {
-                        Some(e) => src[e.whole.clone()].to_string(),
-                        None => format!("{k}: {}", value_to_source(v)),
-                    });
-                }
-            }
-            bindings.insert(rest_var.clone(), remaining.join(", "));
+            let fallback = || {
+                entries
+                    .iter()
+                    .filter_map(|e| match e {
+                        Entry::Pair(k, v) if !matched_keys.contains(&k.as_str()) => {
+                            Some(format!("{k}: {}", value_to_source(v)))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let rest = rest_of_group(written, entries.len(), &matched_keys, src, fallback);
+            bindings.insert(rest_var.clone(), rest);
         }
     }
 
@@ -150,10 +150,12 @@ pub fn match_element(
     if let Some(args_pat) = &pat.args {
         let actual_args = el.args.as_ref()?;
         let written = parts.map_or(&[][..], |p| p.args_entries.as_slice());
+        let mut named_keys = Vec::new();
         for entry_pat in &args_pat.entries {
             match entry_pat {
                 ArgEntryPattern::Named(key, val_pat) => match actual_args {
                     Value::Map(entries) => {
+                        named_keys.push(key.as_str());
                         let found = entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
                         if !match_value(
                             val_pat,
@@ -179,6 +181,25 @@ pub fn match_element(
                 }
             }
         }
+
+        if let Some(rest_var) = &args_pat.rest_var {
+            let (count, fallback): (usize, Vec<String>) = match actual_args {
+                Value::Map(entries) => (
+                    entries.len(),
+                    entries
+                        .iter()
+                        .filter(|(k, _)| !named_keys.contains(&k.as_str()))
+                        .map(|(k, v)| match k.is_empty() {
+                            true => value_to_source(v),
+                            false => format!("{k}: {}", value_to_source(v)),
+                        })
+                        .collect(),
+                ),
+                single => (1, vec![value_to_source(single)]),
+            };
+            let rest = rest_of_group(written, count, &named_keys, src, || fallback);
+            bindings.insert(rest_var.clone(), rest);
+        }
     }
 
     // 5. Content `[...]` matching
@@ -200,6 +221,62 @@ pub fn match_element(
     }
 
     Some(bindings)
+}
+
+/// The entries of a group that a pattern did not name, as written: each entry's own text, and
+/// between two of them the separator the source had there (a newline and its indentation, a
+/// comma, a comment), so a rest written one entry per line comes back one per line.
+///
+/// `written` must hold every entry of the group (`count` of them); without that the CST does not
+/// describe this group and `fallback`, the entries rendered again, is joined with `", "`.
+fn rest_of_group(
+    written: &[EntrySource],
+    count: usize,
+    named: &[&str],
+    src: &str,
+    fallback: impl FnOnce() -> Vec<String>,
+) -> String {
+    if written.len() != count {
+        return fallback().join(", ");
+    }
+    let mut out = String::new();
+    let mut previous: Option<usize> = None;
+    for (i, entry) in written.iter().enumerate() {
+        if entry.key.as_deref().is_some_and(|k| named.contains(&k)) {
+            continue;
+        }
+        if let Some(p) = previous {
+            let gap = &src[written[p].whole.end..written[p + 1].whole.start];
+            // the entry that followed is gone from the rest: keep its separator's shape, not
+            // a comment that was about the entry that is not here
+            let gap = if p + 1 == i {
+                gap.to_string()
+            } else {
+                plain_gap(gap)
+            };
+            out.push_str(&gap);
+        }
+        out.push_str(&src[entry.whole.clone()]);
+        previous = Some(i);
+    }
+    out
+}
+
+/// A separator without comments: its comma if it had one, then its line break and indentation
+/// (or `", "` between two entries on one line).
+fn plain_gap(gap: &str) -> String {
+    if gap.chars().all(|c| c.is_whitespace() || c == ',') {
+        return gap.to_string();
+    }
+    let comma = if gap.trim_start().starts_with(',') {
+        ","
+    } else {
+        ""
+    };
+    match gap.rfind('\n') {
+        Some(nl) => format!("{comma}{}", &gap[nl..]),
+        None => ", ".to_string(),
+    }
 }
 
 /// The entry of a group written with `key`; `None` is the first positional one.
