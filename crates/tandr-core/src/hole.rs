@@ -19,12 +19,15 @@
 //! are not implemented; a pattern that uses one is refused when it is read.
 
 use tomet_ast::{Hole as AstHole, Value};
+use tomet_type::Type;
 
 /// A hole, as tandr reads it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Hole {
     /// `<?(name)>` or `<?>` / `<?()>`: matches one thing; the name it binds, if it has one.
     Bind(Option<String>),
+    /// `<?int(name)>`, `<?version(name)>`, or `<?int>`: matches a typed value.
+    Typed { ty: Type, var: Option<String> },
     /// `<?rest(name)>`: the rest of a `{ }` or `( )` group.
     Rest(String),
     /// `<?element(tag, args){data}>[content]` or `<?declaration(...)>`: any element, or any
@@ -79,8 +82,17 @@ pub fn read(hole: &AstHole) -> Result<Hole, String> {
                 Err("name the rest, <?rest(name)>: an anonymous rest binds nothing".to_string())
             }
         },
+        Some(m) if Type::from_name(m).is_some() => {
+            let ty = Type::from_name(m).unwrap();
+            Ok(Hole::Typed { ty, var: name })
+        }
         Some(other) => Err(format!(
-            "the matcher `{other}` is not implemented; tandr knows `{REST}`, `{ELEMENT}` and `{DECLARATION}`"
+            "the matcher `{other}` is not implemented; tandr knows `{REST}`, `{ELEMENT}`, `{DECLARATION}` and types ({})",
+            Type::ALL
+                .iter()
+                .map(|t| t.base_name())
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
     }
 }
@@ -200,8 +212,96 @@ mod tests {
     }
 
     #[test]
+    fn typed_holes_match_type_and_bind_or_not() {
+        assert_eq!(
+            hole("<?int(n)>"),
+            Ok(Hole::Typed {
+                ty: Type::Int,
+                var: Some("n".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?int>"),
+            Ok(Hole::Typed {
+                ty: Type::Int,
+                var: None
+            })
+        );
+        assert_eq!(
+            hole("<?int()>"),
+            Ok(Hole::Typed {
+                ty: Type::Int,
+                var: None
+            })
+        );
+        assert_eq!(
+            hole("<?uint(u)>"),
+            Ok(Hole::Typed {
+                ty: Type::Uint,
+                var: Some("u".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?float(f)>"),
+            Ok(Hole::Typed {
+                ty: Type::Float,
+                var: Some("f".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?string(s)>"),
+            Ok(Hole::Typed {
+                ty: Type::String,
+                var: Some("s".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?bool(b)>"),
+            Ok(Hole::Typed {
+                ty: Type::Bool,
+                var: Some("b".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?datetime(d)>"),
+            Ok(Hole::Typed {
+                ty: Type::Datetime,
+                var: Some("d".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?version(v)>"),
+            Ok(Hole::Typed {
+                ty: Type::Version,
+                var: Some("v".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?uuid(u)>"),
+            Ok(Hole::Typed {
+                ty: Type::Uuid,
+                var: Some("u".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?nanoid(n)>"),
+            Ok(Hole::Typed {
+                ty: Type::Nanoid,
+                var: Some("n".to_string())
+            })
+        );
+        assert_eq!(
+            hole("<?list(items)>"),
+            Ok(Hole::Typed {
+                ty: Type::List(None),
+                var: Some("items".to_string())
+            })
+        );
+    }
+
+    #[test]
     fn what_is_not_implemented_is_refused_by_name() {
-        assert!(hole("<?int(n)>").unwrap_err().contains("`int`"));
+        assert!(hole("<?foo(n)>").unwrap_err().contains("`foo`"));
         assert!(hole("<?(n)>[abc]").unwrap_err().contains("not implemented"));
         assert!(
             hole("<?(n){min: 1}>")

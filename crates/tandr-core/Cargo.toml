@@ -14,6 +14,7 @@ tomet-cst-parser = { workspace = true }
 tomet-edit = { workspace = true }
 tomet-semantics = { workspace = true }
 tomet-tree = { workspace = true }
+tomet-type = { workspace = true }
 
 anyhow = { workspace = true }
 serde = { workspace = true }

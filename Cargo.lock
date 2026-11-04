@@ -611,6 +611,7 @@ dependencies = [
  "tomet-semantics",
  "tomet-span",
  "tomet-tree",
+ "tomet-type",
 ]
 
 [[package]]

@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use tomet_ast::{Block, Declaration, Element, Entry, Hole as AstHole, Inline, Value};
+use tomet_type::Type;
 
 use crate::hole::{self, Hole};
 
@@ -92,9 +93,21 @@ pub struct DataPattern {
 pub enum ValuePattern {
     Any,
     Var(String),
+    Typed { ty: Type, var: Option<String> },
     String(String),
     Number(i64),
     Bool(bool),
+}
+
+impl ValuePattern {
+    /// The variable name bound by this value pattern, if any.
+    pub fn bound_name(&self) -> Option<&str> {
+        match self {
+            ValuePattern::Var(n) => Some(n),
+            ValuePattern::Typed { var: Some(n), .. } => Some(n),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for ValuePattern {
@@ -102,6 +115,8 @@ impl fmt::Display for ValuePattern {
         match self {
             ValuePattern::Any => write!(f, "<?>"),
             ValuePattern::Var(v) => write!(f, "<?({v})>"),
+            ValuePattern::Typed { ty, var: Some(v) } => write!(f, "<?{ty}({v})>"),
+            ValuePattern::Typed { ty, var: None } => write!(f, "<?{ty}>"),
             ValuePattern::String(s) => write!(f, "\"{s}\""),
             ValuePattern::Number(n) => write!(f, "{n}"),
             ValuePattern::Bool(b) => write!(f, "{b}"),
@@ -164,16 +179,16 @@ impl Pattern {
                 let v = match entry {
                     ArgEntryPattern::Positional(v) | ArgEntryPattern::Named(_, v) => v,
                 };
-                if let ValuePattern::Var(n) = v {
-                    names.insert(n.clone());
+                if let Some(n) = v.bound_name() {
+                    names.insert(n.to_string());
                 }
             }
             names.extend(args.rest_var.clone());
         }
         if let Some(data) = &el.data {
             for (_, val) in &data.fields {
-                if let ValuePattern::Var(n) = val {
-                    names.insert(n.clone());
+                if let Some(n) = val.bound_name() {
+                    names.insert(n.to_string());
                 }
             }
             names.extend(data.rest_var.clone());
@@ -331,9 +346,9 @@ fn lower_data(entries: &[Entry]) -> Result<DataPattern, String> {
                         return Err("a group has one rest, <?rest(name)>".to_string());
                     }
                 }
-                Hole::Bind(_) => {
+                Hole::Bind(_) | Hole::Typed { .. } => {
                     return Err(
-                        "a hole alone in `{ }` has no key; write `key: <?(name)>`, or <?rest(name)> \
+                        "a hole alone in `{ }` has no key; write `key: <?...>`, or <?rest(name)> \
                          for the rest"
                             .to_string(),
                     );
@@ -355,7 +370,7 @@ fn rest_of(value: &Value) -> Result<Option<String>, String> {
     match value {
         Value::Hole(h) => match hole::read(h)? {
             Hole::Rest(name) => Ok(Some(name)),
-            Hole::Bind(_) => Ok(None),
+            Hole::Bind(_) | Hole::Typed { .. } => Ok(None),
             Hole::Element { .. } => Err(WHOLE_ELEMENT.to_string()),
         },
         _ => Ok(None),
@@ -371,6 +386,7 @@ fn lower_value(value: &Value) -> Result<ValuePattern, String> {
         Value::Hole(h) => match hole::read(h)? {
             Hole::Bind(Some(name)) => Ok(ValuePattern::Var(name)),
             Hole::Bind(None) => Ok(ValuePattern::Any),
+            Hole::Typed { ty, var } => Ok(ValuePattern::Typed { ty, var }),
             Hole::Rest(_) => Err(
                 "<?rest(name)> is the rest of a group; it cannot stand for one value".to_string(),
             ),
@@ -420,6 +436,9 @@ fn lower_content(blocks: &[Block], src: &str) -> Result<SlotPattern, String> {
             [Inline::Hole(h)] => match hole::read(h)? {
                 Hole::Bind(Some(name)) => Ok(SlotPattern::Var(name)),
                 Hole::Bind(None) => Ok(SlotPattern::Any),
+                Hole::Typed { .. } => Err(
+                    "a typed hole cannot stand for the content; write <?(name)> or <?>".to_string(),
+                ),
                 Hole::Rest(_) => Err(
                     "<?rest(name)> is the rest of a group; it cannot stand for the content"
                         .to_string(),
@@ -488,7 +507,7 @@ mod tests {
     #[test]
     fn what_tandr_does_not_implement_is_refused_with_why() {
         for (src, hint) in [
-            ("@meta{ type: <?int(n)> }", "`int`"),
+            ("@meta{ type: <?foo(n)> }", "`foo`"),
             ("@meta{ <?(...rest)> }", "<?rest(rest)>"),
             ("@meta{ <?(x)> }", "no key"),
             ("@x(<?rest()>)", "anonymous"),
@@ -575,5 +594,51 @@ mod tests {
             el.content,
             Some(SlotPattern::Exact("some  text".to_string()))
         );
+    }
+
+    #[test]
+    fn typed_holes_in_pattern_are_parsed_and_bind_names() {
+        let p =
+            parse_pattern("@item(count: <?int(n)>, <?uint>){ ver: <?version(v)>, tag: <?string> }")
+                .unwrap();
+        let Pattern::Element(el) = &p;
+        let args = el.args.as_ref().unwrap();
+        assert_eq!(
+            args.entries,
+            [
+                ArgEntryPattern::Named(
+                    "count".to_string(),
+                    ValuePattern::Typed {
+                        ty: Type::Int,
+                        var: Some("n".to_string())
+                    }
+                ),
+                ArgEntryPattern::Positional(ValuePattern::Typed {
+                    ty: Type::Uint,
+                    var: None
+                }),
+            ]
+        );
+        let data = el.data.as_ref().unwrap();
+        assert_eq!(
+            data.fields,
+            [
+                (
+                    "ver".to_string(),
+                    ValuePattern::Typed {
+                        ty: Type::Version,
+                        var: Some("v".to_string())
+                    }
+                ),
+                (
+                    "tag".to_string(),
+                    ValuePattern::Typed {
+                        ty: Type::String,
+                        var: None
+                    }
+                ),
+            ]
+        );
+        assert_eq!(p.bound_names().into_iter().collect::<Vec<_>>(), ["n", "v"]);
     }
 }

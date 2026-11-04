@@ -605,4 +605,21 @@ mod tests {
             assert!(err.contains("rule 'r'"), "{rules_src}: {err}");
         }
     }
+
+    #[test]
+    fn typed_holes_rewrite_matching_values_and_leave_unmatched_intact() {
+        let src = "@pkg(name: \"core\", ver: 1.10.0) @pkg(name: \"bad\", ver: \"not-a-ver\")\n";
+        let rules_src = r#"
+            bump: {
+                match: "@pkg(name: <?(name)>, ver: <?version(v)>)",
+                replace: "@pkg(${hole.name}, version: ${hole.v})"
+            }
+        "#;
+        let res = run(src, rules_src);
+        assert_eq!(res.changes_count, 1);
+        assert_eq!(
+            res.output,
+            "@pkg(\"core\", version: 1.10.0) @pkg(name: \"bad\", ver: \"not-a-ver\")\n"
+        );
+    }
 }

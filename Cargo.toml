@@ -30,6 +30,7 @@ tomet-cst-parser = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-edit = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-semantics = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-tree = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-type = { git = "https://github.com/tomet-lang/tomet.git" }
 
 #= Crates.io
 anyhow = "1"

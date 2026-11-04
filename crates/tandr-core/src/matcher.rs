@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use tomet_ast::{Block, Declaration, Element, Entry, File, Group, Value};
 use tomet_span::Span;
 use tomet_tree::{for_each_declaration, for_each_element};
+use tomet_type::Type;
 
 use crate::cst::{ElementIndex, EntrySource, Parts};
 use crate::pattern::{
@@ -372,6 +373,18 @@ fn match_value(
             );
             true
         }
+        ValuePattern::Typed { ty, var } => {
+            if !value_fits_type(ty, actual) {
+                return false;
+            }
+            if let Some(v) = var {
+                bindings.insert(
+                    v.clone(),
+                    text.map_or_else(|| value_to_source(actual), str::to_string),
+                );
+            }
+            true
+        }
         ValuePattern::String(expected) => match actual {
             Value::String(s) => s == expected,
             _ => false,
@@ -384,6 +397,35 @@ fn match_value(
             Value::Bool(b) => b == expected,
             _ => false,
         },
+    }
+}
+
+/// Whether an AST value conforms to the given tomet type.
+fn value_fits_type(ty: &Type, actual: &Value) -> bool {
+    let integer = || match actual {
+        Value::Int(n) => Some(*n),
+        Value::Number(s) => s.parse::<i64>().ok(),
+        _ => None,
+    };
+    match ty {
+        Type::Int => integer().is_some(),
+        Type::Uint => integer().is_some_and(|n| n >= 0),
+        Type::Float => matches!(actual, Value::Int(_)) || actual.as_number().is_some(),
+        Type::Bool => matches!(actual, Value::Bool(_)),
+        Type::List(inner) => match actual {
+            Value::Seq(items) => {
+                if let Some(inner_ty) = inner {
+                    items.iter().all(|item| value_fits_type(inner_ty, item))
+                } else {
+                    true
+                }
+            }
+            _ => false,
+        },
+        Type::String | Type::Nanoid => actual.scalar_text().is_some(),
+        Type::Datetime | Type::Version | Type::Uuid => actual
+            .scalar_text()
+            .is_some_and(|text| ty.holds_text(&text) == Some(true)),
     }
 }
 
@@ -465,5 +507,96 @@ mod tests {
         let b = &matches[0].bindings;
         assert_eq!(b.get("u").unwrap(), "\"https://example.com\"");
         assert_eq!(b.get("text").unwrap(), "Visit Here");
+    }
+
+    #[test]
+    fn typed_holes_match_int_and_uint() {
+        let src = "@counter(val: 42) @neg(val: -5) @text(val: \"hello\")\n";
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let index = ElementIndex::new(&tomet_cst_parser::parse_cst(src));
+
+        let pat_int = parse_pattern("<?element(tag, val: <?int(n)>)>").unwrap();
+        let matches = find_matches(&file, &pat_int, src, &index);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].bindings.get("tag").unwrap(), "counter");
+        assert_eq!(matches[0].bindings.get("n").unwrap(), "42");
+        assert_eq!(matches[1].bindings.get("tag").unwrap(), "neg");
+        assert_eq!(matches[1].bindings.get("n").unwrap(), "-5");
+
+        let pat_uint = parse_pattern("<?element(tag, val: <?uint(u)>)>").unwrap();
+        let matches = find_matches(&file, &pat_uint, src, &index);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings.get("tag").unwrap(), "counter");
+        assert_eq!(matches[0].bindings.get("u").unwrap(), "42");
+    }
+
+    #[test]
+    fn typed_holes_match_version() {
+        let src = "@dep(ver: 1.10.0) @dep(ver: \"2.0.1\") @bad(ver: \"not-a-ver\")\n";
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let index = ElementIndex::new(&tomet_cst_parser::parse_cst(src));
+
+        let pat_ver = parse_pattern("@dep(ver: <?version(v)>)").unwrap();
+        let matches = find_matches(&file, &pat_ver, src, &index);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].bindings.get("v").unwrap(), "1.10.0");
+        assert_eq!(matches[1].bindings.get("v").unwrap(), "\"2.0.1\"");
+
+        // Anonymous version hole
+        let pat_anon = parse_pattern("@dep(ver: <?version>)").unwrap();
+        let matches = find_matches(&file, &pat_anon, src, &index);
+        assert_eq!(matches.len(), 2);
+        assert!(matches[0].bindings.is_empty());
+    }
+
+    #[test]
+    fn typed_holes_match_uuid_and_datetime() {
+        let src = "@item(id: \"123e4567-e89b-12d3-a456-426614174000\") @item(id: \"invalid\") @event(at: 2026-10-25) @event(at: \"bad-date\")\n";
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let index = ElementIndex::new(&tomet_cst_parser::parse_cst(src));
+
+        let pat_uuid = parse_pattern("@item(id: <?uuid(id)>)").unwrap();
+        let matches = find_matches(&file, &pat_uuid, src, &index);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].bindings.get("id").unwrap(),
+            "\"123e4567-e89b-12d3-a456-426614174000\""
+        );
+
+        let pat_dt = parse_pattern("@event(at: <?datetime(d)>)").unwrap();
+        let matches = find_matches(&file, &pat_dt, src, &index);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings.get("d").unwrap(), "2026-10-25");
+    }
+
+    #[test]
+    fn typed_holes_match_bool_and_float() {
+        let src = "@flag(ok: true) @flag(ok: false) @flag(ok: \"yes\") @num(v: 3.14) @num(v: 100) @num(v: \"str\")\n";
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let index = ElementIndex::new(&tomet_cst_parser::parse_cst(src));
+
+        let pat_bool = parse_pattern("@flag(ok: <?bool(b)>)").unwrap();
+        let matches = find_matches(&file, &pat_bool, src, &index);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].bindings.get("b").unwrap(), "true");
+        assert_eq!(matches[1].bindings.get("b").unwrap(), "false");
+
+        let pat_float = parse_pattern("@num(v: <?float(f)>)").unwrap();
+        let matches = find_matches(&file, &pat_float, src, &index);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].bindings.get("f").unwrap(), "3.14");
+        assert_eq!(matches[1].bindings.get("f").unwrap(), "100");
+    }
+
+    #[test]
+    fn typed_holes_match_list() {
+        let src = "@tags(items: list(\"a\", \"b\")) @tags(items: \"not-a-list\")\n";
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let index = ElementIndex::new(&tomet_cst_parser::parse_cst(src));
+
+        let pat_list = parse_pattern("@tags(items: <?list(l)>)").unwrap();
+        let matches = find_matches(&file, &pat_list, src, &index);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings.get("l").unwrap(), "list(\"a\", \"b\")");
     }
 }
