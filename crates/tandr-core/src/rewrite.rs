@@ -9,7 +9,8 @@
 use std::ops::Range;
 
 use anyhow::Result;
-use tomet_parser::{parse_cst, parse_document};
+use tomet_ast_parser::parse_file;
+use tomet_cst_parser::parse_cst;
 
 use crate::cst::ElementIndex;
 use crate::matcher::{MatchResult, find_matches};
@@ -148,11 +149,11 @@ pub fn apply_rule_set(src: &str, rule_set: &RuleSet) -> Result<RewriteResult> {
             continue;
         };
 
-        let doc = parse_document(&current_text).map_err(|e| {
+        let file = parse_file(&current_text).map_err(|e| {
             anyhow::anyhow!("Failed to parse document during rule '{}': {e}", rule.name)
         })?;
         let index = ElementIndex::new(&parse_cst(&current_text));
-        let mut matches = find_matches(&doc, &rule.pattern, &current_text, &index);
+        let mut matches = find_matches(&file, &rule.pattern, &current_text, &index);
         if matches.is_empty() {
             continue;
         }
@@ -191,7 +192,7 @@ pub fn apply_rule_set(src: &str, rule_set: &RuleSet) -> Result<RewriteResult> {
         apply_edits(&mut current_text, accepted);
         // A template can break what it is put into (a rest that ends in a `//` comment
         // swallows the `}` after it). Say which rule did it, and write nothing.
-        if let Err(e) = parse_document(&current_text) {
+        if let Err(e) = parse_file(&current_text) {
             anyhow::bail!(
                 "rule '{}' made a document that does not parse ({e}); nothing is written",
                 rule.name
@@ -227,7 +228,7 @@ mod tests {
             src,
             r#"
             promote_meta: {
-                match: "@meta{ type: ?(k), ?rest(rest) }"
+                match: "@meta{ type: <?(k)>, <?rest(rest)> }"
                 replace: "@kind(${hole.k})\n@meta{ ${hole.rest} }"
             }
         "#,
@@ -247,7 +248,7 @@ mod tests {
             src,
             r#"
             promote_meta: {
-                match: "@meta{ type: ?(k), ?rest(rest) }"
+                match: "@meta{ type: <?(k)>, <?rest(rest)> }"
                 replace: { before: "@kind(${hole.k})\n", data: "{ ${hole.rest} }" }
             }
         "#,
@@ -265,7 +266,7 @@ mod tests {
             src,
             r#"
             add_rel: {
-                match: "@link(url: ?(u))[ ?(t) ]"
+                match: "@link(url: <?(u)>)[ <?(t)> ]"
                 replace: "@link(url: ${hole.u}, rel: \"external\")[ ${hole.t} ]"
             }
         "#,
@@ -283,7 +284,7 @@ mod tests {
             src,
             r#"
             tag_all: {
-                match: "?element(t, a: ?(v))"
+                match: "<?element(t, a: <?(v)>)>"
                 replace: { head: "@${hole.t}-v${hole.v}" }
             }
         "#,
@@ -302,7 +303,7 @@ mod tests {
             src,
             r#"
             note: {
-                match: "?declaration(t){ id: ?(i) }"
+                match: "<?declaration(t){ id: <?(i)> }>"
                 replace: { before: "// ${hole.t} ${hole.i}\n" }
             }
         "#,
@@ -311,12 +312,13 @@ mod tests {
             res.output,
             "::kind(config)\n// meta x\n::meta{ id: x }\n\n@meta{ id: y }\n"
         );
+        assert_eq!(res.changes_count, 1);
     }
 
     const DOC_RULES: &str = r#"
-        doc_kind:   { match: "@kind",   replace: { head: "::kind" } }
-        doc_meta:   { match: "@meta",   replace: { head: "::meta" } }
-        doc_config: { match: "@config", replace: { head: "::config" } }
+        doc_kind:   { match: "@kind",   replace: { head: "@doc_kind" } }
+        doc_meta:   { match: "@meta",   replace: { head: "@doc_meta" } }
+        doc_config: { match: "@config", replace: { head: "@doc_config" } }
     "#;
 
     #[test]
@@ -325,11 +327,11 @@ mod tests {
         let res = run(src, DOC_RULES);
         assert_eq!(
             res.output,
-            "::kind(config)\n::meta{   id:  x ,\n   title:   \"T\"   }\n::config{ a:   1,   b: 2 }[ prose ]#(i):rule(allow:list(a))\n\n=[ T ]\n\ntext ::kind(inline)\n"
+            "@doc_kind(config)\n@doc_meta{   id:  x ,\n   title:   \"T\"   }\n@doc_config{ a:   1,   b: 2 }[ prose ]#(i):rule(allow:list(a))\n\n=[ T ]\n\ntext @doc_kind(inline)\n"
         );
         assert_eq!(res.changes_count, 4);
         // and the reverse gives back the original, byte for byte
-        assert_eq!(res.output.replace("::", "@"), src);
+        assert_eq!(res.output.replace("@doc_", "@"), src);
     }
 
     #[test]
@@ -344,10 +346,13 @@ mod tests {
     #[test]
     fn code_and_inline_code_are_not_elements() {
         let src = "Write `@kind(x)` first.\n\n```tmt\n@kind(x)\n```\n\n@kind(real)\n";
-        let res = run(src, DOC_RULES);
+        let res = run(
+            src,
+            r#"r: { match: "@kind", replace: { head: "@target" } }"#,
+        );
         assert_eq!(
             res.output,
-            "Write `@kind(x)` first.\n\n```tmt\n@kind(x)\n```\n\n::kind(real)\n"
+            "Write `@kind(x)` first.\n\n```tmt\n@kind(x)\n```\n\n@target(real)\n"
         );
     }
 
@@ -407,7 +412,7 @@ mod tests {
         let res = run(
             "@box[ @box[ x ] ]\n",
             r#"
-            r: { match: "@box[ ?(c) ]", replace: "<${hole.c}>" }
+            r: { match: "@box[ <?(c)> ]", replace: "<${hole.c}>" }
         "#,
         );
         assert_eq!(res.output, "<@box[ x ]>\n");
@@ -421,7 +426,7 @@ mod tests {
         let src = "@m{\n  type: x\n  a: 1 // about a\n}\n";
         let rules = RuleSet::from_cotomet_str(
             r#"
-            swallow: { match: "@m{ type: ?(t), ?rest(r) }", replace: "@n{ ${hole.r} }" }
+            swallow: { match: "@m{ type: <?(t)>, <?rest(r)> }", replace: "@n{ ${hole.r} }" }
         "#,
         )
         .unwrap();
@@ -454,7 +459,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@t(a: ?(a), b: ?(b)){ s: ?(s), l: ?(l) }", replace: "@u(${hole.a}, ${hole.b}, ${hole.s}, ${hole.l})" }
+            r: { match: "@t(a: <?(a)>, b: <?(b)>){ s: <?(s)>, l: <?(l)> }", replace: "@u(${hole.a}, ${hole.b}, ${hole.s}, ${hole.l})" }
         "#,
         );
         assert_eq!(res.output, "@u(1.50, x, \"q\\\"z\", list(1, 2))\n");
@@ -466,7 +471,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@k(${hole.t}) @m{ ${hole.rest} }" }
+            r: { match: "@m{ type: <?(t)>, <?rest(rest)> }", replace: "@k(${hole.t}) @m{ ${hole.rest} }" }
         "#,
         );
         assert_eq!(res.output, "@k(a) @m{ k: 0x10, \"w\": \"v\" }\n");
@@ -478,7 +483,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@meta{ type: ?(t), ?rest(rest) }", replace: "@kind(${hole.t})\n@meta{\n  ${hole.rest}\n}" }
+            r: { match: "@meta{ type: <?(t)>, <?rest(rest)> }", replace: "@kind(${hole.t})\n@meta{\n  ${hole.rest}\n}" }
         "#,
         );
         assert_eq!(
@@ -493,7 +498,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@n{\n  ${hole.rest}\n}" }
+            r: { match: "@m{ type: <?(t)>, <?rest(rest)> }", replace: "@n{\n  ${hole.rest}\n}" }
         "#,
         );
         assert_eq!(res.output, "@n{\n  a: 1,\n  b: 2,\n  c: 3\n}\n");
@@ -505,7 +510,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@n{\n  ${hole.rest}\n}" }
+            r: { match: "@m{ type: <?(t)>, <?rest(rest)> }", replace: "@n{\n  ${hole.rest}\n}" }
         "#,
         );
         // `// about a` is a's own (it ends the entry); `// about b` sat in the gap after the
@@ -517,7 +522,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@m{ type: ?(t), ?rest(rest) }", replace: "@n{ ${hole.rest} }" }
+            r: { match: "@m{ type: <?(t)>, <?rest(rest)> }", replace: "@n{ ${hole.rest} }" }
         "#,
         );
         assert_eq!(res.output, "@n{ a: 1 // about a\n  b: 2 }\n");
@@ -529,7 +534,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "@x(a: ?(a), ?rest(r))", replace: "@y(${hole.a}; ${hole.r})" }
+            r: { match: "@x(a: <?(a)>, <?rest(r)>)", replace: "@y(${hole.a}; ${hole.r})" }
         "#,
         );
         assert_eq!(res.output, "@y(1; b: \"q\",\n   c: 0x10)\n");
@@ -541,7 +546,7 @@ mod tests {
         let res = run(
             src,
             r#"
-            r: { match: "::meta{ id: ?(i) }", replace: "::meta{ id: ${hole.i}, v: 2 }" }
+            r: { match: "::meta{ id: <?(i)> }", replace: "::meta{ id: ${hole.i}, v: 2 }" }
         "#,
         );
         assert_eq!(
@@ -578,7 +583,7 @@ mod tests {
         let res = run(
             "@t(a: 1, b: 2)\n",
             r#"
-            r: { match: "@t(a: ?(k), b: ?(kind))", replace: "@t(${hole.kind}, ${hole.k})" }
+            r: { match: "@t(a: <?(k)>, b: <?(kind)>)", replace: "@t(${hole.kind}, ${hole.k})" }
         "#,
         );
         assert_eq!(res.output, "@t(2, 1)\n");
@@ -588,7 +593,7 @@ mod tests {
     fn a_rule_that_cannot_be_applied_as_written_is_refused_before_anything_changes() {
         let src = "@kind(x)\n";
         for rules_src in [
-            r#"r: { match: "@kind", where: "?(a) == 1", replace: { head: "::kind" } }"#,
+            r#"r: { match: "@kind", where: "<?(a)> == 1", replace: { head: "::kind" } }"#,
             r#"r: { match: "@kind", replace: "@k(${hole.missing})" }"#,
             r#"r: { match: "@kind", replace: { head: "@k(${hole.missing})" } }"#,
             r#"r: { match: "@kind", replace: {} }"#,

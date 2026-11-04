@@ -7,8 +7,10 @@ license.workspace = true
 [dependencies]
 cotomet = { workspace = true }
 tomet-ast = { workspace = true }
+tomet-span = { workspace = true }
+tomet-ast-parser = { workspace = true }
 tomet-cst = { workspace = true }
-tomet-parser = { workspace = true }
+tomet-cst-parser = { workspace = true }
 tomet-edit = { workspace = true }
 tomet-semantics = { workspace = true }
 tomet-tree = { workspace = true }

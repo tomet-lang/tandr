@@ -218,7 +218,7 @@ fn exit_codes_tell_changed_from_failed() {
 
     // 2: a bad rule file, a missing target, a missing rule file
     let bad = dir.join("bad.tandr");
-    fs::write(&bad, "r: { match: \"@x(?nope(n))\" }\n").unwrap();
+    fs::write(&bad, "r: { match: \"@x(<?nope(n)>)\" }\n").unwrap();
     let out = tandr(&bad, &["--check"], &[&a]);
     assert_eq!(code(&out), Some(2), "{}", text(&out.stderr));
     let gone = dir.join("gone.tmt");
@@ -335,7 +335,7 @@ fn a_rewrite_that_would_not_parse_is_not_written_and_the_rest_still_are() {
         &swallow,
         r#"
         kind: { match: "@kind", replace: { head: "::kind" } }
-        swallow: { match: "@m{ type: ?(t), ?rest(r) }", replace: "@n{ ${hole.r} }" }
+        swallow: { match: "@m{ type: <?(t)>, <?rest(r)> }", replace: "@n{ ${hole.r} }" }
         "#,
     )
     .unwrap();

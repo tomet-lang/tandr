@@ -131,7 +131,7 @@ impl ElementIndex {
         for node in root.descendants() {
             if !matches!(
                 node.kind(),
-                SyntaxKind::BLOCK_ELEMENT | SyntaxKind::INLINE_ELEMENT
+                SyntaxKind::BLOCK_FORM | SyntaxKind::INLINE_FORM
             ) {
                 continue;
             }
@@ -185,7 +185,7 @@ mod tests {
     use super::*;
 
     fn index(src: &str) -> ElementIndex {
-        ElementIndex::new(&tomet_parser::parse_cst(src))
+        ElementIndex::new(&tomet_cst_parser::parse_cst(src))
     }
 
     #[test]

@@ -286,13 +286,13 @@ mod tests {
         let src = r#"
             promote_meta_type: {
                 description: "Promote meta.type to kind"
-                match: "@meta{ type: ?(kind), ?rest(rest) }"
-                where: "?(kind) != 'raw'"
+                match: "@meta{ type: <?(kind)>, <?rest(rest)> }"
+                where: "<?(kind)> != 'raw'"
                 replace: "@kind(${hole.kind}) @meta{ ${hole.rest} }"
             }
 
             clean_drafts: {
-                match: "=[ ?(title) ] >> @task(?(status))[ ?(body) ]"
+                match: "=[ <?(title)> ] >> @task(<?(status)>)[ <?(body)> ]"
                 replace: "@task(draft)[ ${hole.body} ]"
             }
         "#;
@@ -309,8 +309,8 @@ mod tests {
             r1.def.description.as_deref(),
             Some("Promote meta.type to kind")
         );
-        assert_eq!(r1.def.r#match, "@meta{ type: ?(kind), ?rest(rest) }");
-        assert_eq!(r1.def.r#where.as_deref(), Some("?(kind) != 'raw'"));
+        assert_eq!(r1.def.r#match, "@meta{ type: <?(kind)>, <?rest(rest)> }");
+        assert_eq!(r1.def.r#where.as_deref(), Some("<?(kind)> != 'raw'"));
         assert_eq!(
             r1.def.replace,
             Some(Replace::Template(
@@ -380,7 +380,7 @@ mod tests {
     fn compiling_reports_every_problem_in_the_set() {
         let rule_set = RuleSet::from_cotomet_str(
             r#"
-            a: { match: "@a", where: "?(x) == 1", replace: "${hole.y}" }
+            a: { match: "@a", where: "<?(x)> == 1", replace: "${hole.y}" }
             b: { match: "nonsense" }
         "#,
         )

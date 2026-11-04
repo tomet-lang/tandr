@@ -1,13 +1,13 @@
 //! Replacement templates: text with `${hole.name}` in it.
 //!
-//! `${hole.name}` inserts what the pattern bound to `name` (`?(name)` or `?rest(name)`);
+//! `${hole.name}` inserts what the pattern bound to `name` (`<?(name)>` or `<?rest(name)>`);
 //! everything else, `?` and a `$` that does not open `${` included, is itself. tomet reads
 //! the `${...}`; `hole` is not a value tomet evaluates, so tandr resolves it here.
 //!
 //! A template is parsed once, so a name that the pattern never binds is found when the
 //! rules are loaded, not when a file is half rewritten.
 
-use tomet_ast::{ElementValue, InterpExprKind, Sigil};
+use tomet_ast::InterpExprKind;
 
 use crate::hole::is_name;
 use crate::matcher::Bindings;
@@ -77,14 +77,9 @@ impl Template {
 
 /// The `${hole.name}` that `src` starts with: the name, and how many bytes it takes.
 fn parse_hole(src: &str) -> Result<(String, usize), String> {
-    let el = tomet_parser::parse_dollar_element_str(src).map_err(|e| e.to_string())?;
-    let Some(ElementValue::Interp(expr)) = &el.value else {
-        return Err(format!(
-            "only ${{{NAMESPACE}.name}} can be inserted in a template"
-        ));
-    };
-    let name = match (&el.sigil, &expr.kind) {
-        (Sigil::Dollar, InterpExprKind::Member { object, member }) if matches!(&object.kind, InterpExprKind::Identifier(ns) if ns == NAMESPACE) => {
+    let interp = tomet_ast_parser::parse_interpolation_str(src).map_err(|e| e.to_string())?;
+    let name = match &interp.expr.kind {
+        InterpExprKind::Member { object, member } if matches!(&object.kind, InterpExprKind::Identifier(ns) if ns == NAMESPACE) => {
             member
         }
         _ => {
@@ -99,7 +94,7 @@ fn parse_hole(src: &str) -> Result<(String, usize), String> {
             "`{name}` is not a name: a name is letters, digits and '_'"
         ));
     }
-    Ok((name.clone(), el.span.end))
+    Ok((name.clone(), interp.span.end))
 }
 
 #[cfg(test)]
@@ -140,10 +135,10 @@ mod tests {
     #[test]
     fn only_a_dollar_brace_opens_a_hole() {
         // `?`, `?(...)` and a `$` of its own are text now
-        let t = Template::parse("really? ?(not a hole) costs $5 ${hole.x}").unwrap();
+        let t = Template::parse("really? <?> costs $5 ${hole.x}").unwrap();
         assert_eq!(
             t.expand(&bind(&[("x", "!")])).unwrap(),
-            "really? ?(not a hole) costs $5 !"
+            "really? <?> costs $5 !"
         );
     }
 

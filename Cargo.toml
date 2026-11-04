@@ -23,8 +23,10 @@ tomet-config = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-indexer = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-load-config = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-ast = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-span = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-cst = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-parser = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-ast-parser = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-cst-parser = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-edit = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-semantics = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-tree = { git = "https://github.com/tomet-lang/tomet.git" }

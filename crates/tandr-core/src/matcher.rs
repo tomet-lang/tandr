@@ -3,9 +3,9 @@
 //! Matches structural patterns against tomet AST elements and extracts variable bindings.
 
 use std::collections::BTreeMap;
-use tomet_ast::{Document, Element, ElementValue, Entry, Span, Value};
-use tomet_semantics::classify_std_lenient;
-use tomet_tree::for_each_element;
+use tomet_ast::{Block, Declaration, Element, Entry, File, Group, Value};
+use tomet_span::Span;
+use tomet_tree::{for_each_declaration, for_each_element};
 
 use crate::cst::{ElementIndex, EntrySource, Parts};
 use crate::pattern::{
@@ -24,10 +24,10 @@ pub struct MatchResult {
     pub bindings: Bindings,
 }
 
-/// Finds all matches for `pattern` in `doc`. `index` is the CST of the same `src`: a
+/// Finds all matches for `pattern` in `file`. `index` is the CST of the same `src`: a
 /// capture is the text as written there, not a rendering of the AST.
 pub fn find_matches(
-    doc: &Document,
+    file: &File,
     pattern: &Pattern,
     src: &str,
     index: &ElementIndex,
@@ -35,45 +35,96 @@ pub fn find_matches(
     let mut results = Vec::new();
 
     match pattern {
-        Pattern::Element(el_pat) => {
-            for_each_element(doc, |el| {
-                if let Some(bindings) =
-                    match_element(el_pat, el, src, index.get(el.span.start..el.span.end))
-                {
-                    results.push(MatchResult {
-                        span: el.span,
-                        bindings,
-                    });
-                }
-            });
-        }
+        Pattern::Element(el_pat) => match el_pat.sigil {
+            SigilKind::At => {
+                for_each_element(file, |el| {
+                    if let Some(bindings) =
+                        match_element(el_pat, el, src, index.get(el.span.start..el.span.end))
+                    {
+                        results.push(MatchResult {
+                            span: el.span,
+                            bindings,
+                        });
+                    }
+                });
+            }
+            SigilKind::Document => {
+                for_each_declaration(file, |decl| {
+                    if let Some(bindings) = match_declaration(
+                        el_pat,
+                        decl,
+                        src,
+                        index.get(decl.span.start..decl.span.end),
+                    ) {
+                        results.push(MatchResult {
+                            span: decl.span,
+                            bindings,
+                        });
+                    }
+                });
+            }
+        },
     }
 
     results
 }
 
 /// Checks if an individual AST element matches `pat` and extracts variable bindings.
-/// `parts` says where the element's entries are written; without it a capture is
-/// the AST value rendered again, which loses how it was written.
 pub fn match_element(
     pat: &ElementPattern,
     el: &Element,
     src: &str,
     parts: Option<&Parts>,
 ) -> Option<Bindings> {
-    let mut bindings = Bindings::new();
-
-    // 1. Sigil and tag name matching: a pattern matches only the sigil it is written with,
-    // so an `@name` pattern never matches a `::name` declaration about the document, and
-    // a `::name` pattern never matches content.
-    if el.sigil.is_document() != (pat.sigil == SigilKind::Document) {
+    if pat.sigil != SigilKind::At {
         return None;
     }
-    let tag_name: String = match el.sigil.name() {
-        Some(name) => name.name.clone(),
-        None => classify_std_lenient(el).as_str().to_string(),
-    };
+    let tag = el.name.to_string();
+    match_fields(
+        pat,
+        &tag,
+        el.id.as_ref().map(|id| id.0.as_str()),
+        &el.data,
+        el.content.as_deref(),
+        src,
+        parts,
+    )
+}
 
+/// Checks if an individual AST declaration matches `pat` and extracts variable bindings.
+pub fn match_declaration(
+    pat: &ElementPattern,
+    decl: &Declaration,
+    src: &str,
+    parts: Option<&Parts>,
+) -> Option<Bindings> {
+    if pat.sigil != SigilKind::Document {
+        return None;
+    }
+    let tag = decl.name.to_string();
+    match_fields(
+        pat,
+        &tag,
+        None,
+        &decl.data,
+        decl.content.as_deref(),
+        src,
+        parts,
+    )
+}
+
+fn match_fields(
+    pat: &ElementPattern,
+    tag_name: &str,
+    id: Option<&str>,
+    data: &tomet_ast::Data,
+    content: Option<&[Block]>,
+    src: &str,
+    parts: Option<&Parts>,
+) -> Option<Bindings> {
+    let mut bindings = Bindings::new();
+
+    // 1. Tag name matching
     match &pat.tag {
         TagPattern::Exact(expected) => {
             if !tag_name.eq_ignore_ascii_case(expected) {
@@ -81,21 +132,21 @@ pub fn match_element(
             }
         }
         TagPattern::Var(var_name) => {
-            bindings.insert(var_name.clone(), tag_name);
+            bindings.insert(var_name.clone(), tag_name.to_string());
         }
         TagPattern::Any => {}
     }
 
     // 2. ID matching
     if let Some(id_pat) = &pat.id {
-        match (id_pat, &el.id) {
-            (SlotPattern::Exact(expected), Some(id)) => {
-                if &id.0 != expected {
+        match (id_pat, id) {
+            (SlotPattern::Exact(expected), Some(actual_id)) => {
+                if actual_id != expected {
                     return None;
                 }
             }
-            (SlotPattern::Var(v), Some(id)) => {
-                bindings.insert(v.clone(), id.0.clone());
+            (SlotPattern::Var(v), Some(actual_id)) => {
+                bindings.insert(v.clone(), actual_id.to_string());
             }
             (SlotPattern::Any, Some(_)) => {}
             _ => return None,
@@ -104,8 +155,8 @@ pub fn match_element(
 
     // 3. Data `{...}` matching
     if let Some(data_pat) = &pat.data {
-        let entries = match &el.value {
-            Some(ElementValue::Group(entries)) => entries,
+        let entries = match &data.value {
+            Some(Group(entries)) => entries,
             _ => return None,
         };
 
@@ -148,73 +199,88 @@ pub fn match_element(
 
     // 4. Args `(...)` matching
     if let Some(args_pat) = &pat.args {
-        let actual_args = el.args.as_ref()?;
+        let args = data.args.as_ref()?;
+
         let written = parts.map_or(&[][..], |p| p.args_entries.as_slice());
-        let mut named_keys = Vec::new();
+        let mut matched_keys = Vec::new();
+
         for entry_pat in &args_pat.entries {
             match entry_pat {
-                ArgEntryPattern::Named(key, val_pat) => match actual_args {
+                ArgEntryPattern::Named(expected_key, val_pat) => match args {
                     Value::Map(entries) => {
-                        named_keys.push(key.as_str());
-                        let found = entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+                        let found = entries
+                            .iter()
+                            .find_map(|(k, v)| if k == expected_key { Some(v) } else { None });
+
                         if !match_value(
                             val_pat,
                             found?,
-                            text_of(src, written, Some(key)),
+                            text_of(src, written, Some(expected_key)),
                             &mut bindings,
                         ) {
                             return None;
                         }
+                        matched_keys.push(expected_key.as_str());
                     }
                     _ => return None,
                 },
-                ArgEntryPattern::Positional(val_pat) => {
-                    // Single scalar value or call argument
-                    if !match_value(
-                        val_pat,
-                        actual_args,
-                        text_of(src, written, None),
-                        &mut bindings,
-                    ) {
-                        return None;
+                ArgEntryPattern::Positional(val_pat) => match args {
+                    Value::Map(entries) => {
+                        let found = entries
+                            .iter()
+                            .find_map(|(k, v)| if k.is_empty() { Some(v) } else { None });
+                        if !match_value(val_pat, found?, text_of(src, written, None), &mut bindings)
+                        {
+                            return None;
+                        }
                     }
-                }
+                    _ => {
+                        if !match_value(val_pat, args, text_of(src, written, None), &mut bindings) {
+                            return None;
+                        }
+                    }
+                },
             }
         }
 
         if let Some(rest_var) = &args_pat.rest_var {
-            let (count, fallback): (usize, Vec<String>) = match actual_args {
-                Value::Map(entries) => (
-                    entries.len(),
-                    entries
-                        .iter()
-                        .filter(|(k, _)| !named_keys.contains(&k.as_str()))
-                        .map(|(k, v)| match k.is_empty() {
-                            true => value_to_source(v),
-                            false => format!("{k}: {}", value_to_source(v)),
-                        })
-                        .collect(),
-                ),
-                single => (1, vec![value_to_source(single)]),
+            let actual_len = match args {
+                Value::Map(entries) => entries.len(),
+                _ => 1,
             };
-            let rest = rest_of_group(written, count, &named_keys, src, || fallback);
+            let fallback = || match args {
+                Value::Map(entries) => entries
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        if matched_keys.contains(&k.as_str()) {
+                            None
+                        } else if k.is_empty() {
+                            Some(value_to_source(v))
+                        } else {
+                            Some(format!("{k}: {}", value_to_source(v)))
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                other => vec![value_to_source(other)],
+            };
+            let rest = rest_of_group(written, actual_len, &matched_keys, src, fallback);
             bindings.insert(rest_var.clone(), rest);
         }
     }
 
     // 5. Content `[...]` matching
     if let Some(content_pat) = &pat.content {
-        let content_blocks = el.content.as_ref()?;
-        // Extract raw slice from source using element's span if available
-        let content_text = extract_content_text(el, src, content_blocks);
+        let blocks = content?;
+        let content_str = extract_content_text(src, blocks);
+
         match content_pat {
             SlotPattern::Exact(expected) => {
-                if content_text.trim() != expected.trim() {
+                if content_str != *expected {
                     return None;
                 }
             }
             SlotPattern::Var(v) => {
-                bindings.insert(v.clone(), content_text);
+                bindings.insert(v.clone(), content_str);
             }
             SlotPattern::Any => {}
         }
@@ -223,33 +289,33 @@ pub fn match_element(
     Some(bindings)
 }
 
-/// The entries of a group that a pattern did not name, as written: each entry's own text, and
-/// between two of them the separator the source had there (a newline and its indentation, a
-/// comma, a comment), so a rest written one entry per line comes back one per line.
-///
-/// `written` must hold every entry of the group (`count` of them); without that the CST does not
-/// describe this group and `fallback`, the entries rendered again, is joined with `", "`.
+/// The entries of a group that were not matched, formatted as written: commas, line
+/// breaks and indentation kept, comments about dropped entries dropped, and comments
+/// about kept entries kept.
 fn rest_of_group(
     written: &[EntrySource],
-    count: usize,
-    named: &[&str],
+    actual_len: usize,
+    matched_keys: &[&str],
     src: &str,
     fallback: impl FnOnce() -> Vec<String>,
 ) -> String {
-    if written.len() != count {
+    if written.is_empty() {
         return fallback().join(", ");
+    }
+    let kept: Vec<(usize, &EntrySource)> = written
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !e.key.as_deref().is_some_and(|k| matched_keys.contains(&k)))
+        .collect();
+    if kept.is_empty() {
+        return String::new();
     }
     let mut out = String::new();
     let mut previous: Option<usize> = None;
-    for (i, entry) in written.iter().enumerate() {
-        if entry.key.as_deref().is_some_and(|k| named.contains(&k)) {
-            continue;
-        }
-        if let Some(p) = previous {
-            let gap = &src[written[p].whole.end..written[p + 1].whole.start];
-            // the entry that followed is gone from the rest: keep its separator's shape, not
-            // a comment that was about the entry that is not here
-            let gap = if p + 1 == i {
+    for (i, entry) in kept {
+        if let Some(prev) = previous {
+            let gap = &src[written[prev].whole.end..entry.whole.start];
+            let gap = if prev + 1 == i {
                 gap.to_string()
             } else {
                 plain_gap(gap)
@@ -259,6 +325,7 @@ fn rest_of_group(
         out.push_str(&src[entry.whole.clone()]);
         previous = Some(i);
     }
+    let _ = actual_len;
     out
 }
 
@@ -346,8 +413,7 @@ fn value_to_source(v: &Value) -> String {
     }
 }
 
-fn extract_content_text(_el: &Element, src: &str, blocks: &[tomet_ast::Block]) -> String {
-    // If blocks have spans, take the union of their spans
+fn extract_content_text(src: &str, blocks: &[Block]) -> String {
     let start = blocks.first().map(|b| b.span().start);
     let end = blocks.last().map(|b| b.span().end);
     if let (Some(s), Some(e)) = (start, end)
@@ -363,19 +429,18 @@ fn extract_content_text(_el: &Element, src: &str, blocks: &[tomet_ast::Block]) -
 mod tests {
     use super::*;
     use crate::pattern::parse_pattern;
-    use tomet_parser::parse_document;
 
     #[test]
     fn matches_meta_and_captures_fields() {
         let src = "@meta{ type: \"article\", title: \"My Post\", author: \"Alice\" }\n";
-        let doc = parse_document(src).unwrap();
-        let pat = parse_pattern("@meta{ type: ?(kind), ?rest(rest) }").unwrap();
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let pat = parse_pattern("@meta{ type: <?(kind)>, <?rest(rest)> }").unwrap();
 
         let matches = find_matches(
-            &doc,
+            &file,
             &pat,
             src,
-            &ElementIndex::new(&tomet_parser::parse_cst(src)),
+            &ElementIndex::new(&tomet_cst_parser::parse_cst(src)),
         );
         assert_eq!(matches.len(), 1);
         let b = &matches[0].bindings;
@@ -387,14 +452,14 @@ mod tests {
     #[test]
     fn matches_link_with_args_and_content() {
         let src = "Check @link(url: \"https://example.com\")[ Visit Here ] today.\n";
-        let doc = parse_document(src).unwrap();
-        let pat = parse_pattern("@link(url: ?(u))[ ?(text) ]").unwrap();
+        let file = tomet_ast_parser::parse_file(src).unwrap();
+        let pat = parse_pattern("@link(url: <?(u)>)[ <?(text)> ]").unwrap();
 
         let matches = find_matches(
-            &doc,
+            &file,
             &pat,
             src,
-            &ElementIndex::new(&tomet_parser::parse_cst(src)),
+            &ElementIndex::new(&tomet_cst_parser::parse_cst(src)),
         );
         assert_eq!(matches.len(), 1);
         let b = &matches[0].bindings;
