@@ -1,24 +1,50 @@
 // Sample tandr rules written in cotomet syntax (Style A)
 //
-// The `where:` guards are commented out: tandr refuses a rule with a `where`
-// until it is implemented, rather than apply the rule more broadly than it says.
+// Demonstrates structural pattern matching and rewriting using tomet's slot syntax <?...>,
+// typed holes (<?version>, <?datetime>, <?uint>), and declaration patterns (::decl).
+//
+// Note: `where:` guards are commented out until guard evaluation is implemented.
 
 promote_meta_type: {
     description: "旧式の @meta{type: ...} を @kind(...) へ昇格する"
-    match: "@meta{ type: ?(kind), ?rest(rest) }"
-    // where: "?(kind) != 'raw'"
+    match: "@meta{ type: <?(kind)>, <?rest(rest)> }"
+    // where: "${hole.kind} != 'raw'"
     replace: "@kind(${hole.kind})\n@meta{ ${hole.rest} }"
 }
 
 add_external_rel_to_links: {
     description: "外部リンクに rel 属性を付与する"
-    match: "@link(url: ?(u))[ ?(text) ]"
-    // where: "?(u | test('^https?://'))"
+    match: "@link(url: <?(u)>)[ <?(text)> ]"
+    // where: "${hole.u} =~ '^https?://'"
     replace: "@link(url: ${hole.u}, rel: \"external\")[ ${hole.text} ]"
 }
 
 normalize_todo_tasks: {
-    description: "@task(todo) を @task(status: 'todo') に統一する"
-    match: "@task(?(status))[ ?(body) ]"
+    description: "@task(status) を明示的な引数 @task(status: ...) に統一する"
+    match: "@task(<?(status)>)[ <?(body)> ]"
     replace: "@task(status: ${hole.status})[ ${hole.body} ]"
+}
+
+upgrade_dep_version: {
+    description: "@dep のセマンティックバージョンを正規化引数形式にする"
+    match: "@dep(name: <?(name)>, ver: <?version(v)>)"
+    replace: "@dep(${hole.name}, version: ${hole.v})"
+}
+
+stamp_event_timestamp: {
+    description: "@event(at: ...) の日付・日時を timestamp キーに統一する"
+    match: "@event(at: <?datetime(d)>, <?rest(r)>)"
+    replace: "@event(timestamp: ${hole.d}, ${hole.r})"
+}
+
+format_metric_count: {
+    description: "@metric の非負整数カウントを total キーへ統一する"
+    match: "@metric(name: <?(name)>, count: <?uint(c)>)"
+    replace: "@metric(${hole.name}, total: ${hole.c})"
+}
+
+promote_doc_config: {
+    description: "文書設定宣言 ::config{ env: ... } を ::environment(...) に昇格する"
+    match: "::config{ env: <?(e)> }"
+    replace: "::environment(${hole.e})"
 }

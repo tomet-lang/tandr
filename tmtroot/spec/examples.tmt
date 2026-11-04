@@ -17,8 +17,8 @@ Status: ドラフト。2026-10-20 作成。見出し・関係セレクタ・`whe
 ```tmt
 promote_meta_type: {
     description: "@meta{type: ...} を @kind(...) へ昇格し、残りのメタデータを維持"
-    match: "@meta{ type: ?(k), ?rest(rest) }"
-    where: "?(k) != 'raw'"
+    match: "@meta{ type: <?(k)>, <?rest(rest)> }"
+    where: "${hole.k} != 'raw'"
     replace: "@kind(${hole.k})\n@meta{ ${hole.rest} }"
 }
 ```
@@ -40,7 +40,7 @@ promote_meta_type: {
 ```tmt
 sort_tags: {
     description: "メタデータの tags リストをソートして重複排除"
-    match: "@meta{ tags: ?(tags), ?rest(rest) }"
+    match: "@meta{ tags: <?(tags)>, <?rest(rest)> }"
     replace: "@meta{ tags: ${hole.tags | unique | sort}, ${hole.rest} }"
 }
 ```
@@ -52,7 +52,7 @@ sort_tags: {
 ```tmt
 ensure_meta_header: {
     description: "先頭に @meta がない場合、デフォルトのメタデータを補完"
-    match: "!@meta + =[ ?(first_title) ]"
+    match: "!@meta + =[ <?(first_title)> ]"
     replace: "@meta{\n  title: ${hole.first_title}\n  draft: true\n}\n\n=[ ${hole.first_title} ]"
 }
 ```
@@ -66,8 +66,8 @@ ensure_meta_header: {
 ```tmt
 add_external_link_attributes: {
     description: "外部リンクにセキュリティ属性を自動付与"
-    match: "@link(url: ?(u), ?rest(rest))[ ?(text) ]"
-    where: "?(u | test('^https?://')) && !has_key(?(rest), 'rel')"
+    match: "@link(url: <?(u)>, <?rest(rest)>)[ <?(text)> ]"
+    where: "${hole.u} =~ '^https?://'"
     replace: "@link(url: ${hole.u}, rel: 'external', target: '_blank', ${hole.rest})[ ${hole.text} ]"
 }
 ```
@@ -79,8 +79,8 @@ add_external_link_attributes: {
 ```tmt
 autolink_raw_urls: {
     description: "プロトコル付き URL を @link 要素でラップ"
-    match: "?(raw_url)"
-    where: "?(raw_url | test('^https?://[a-zA-Z0-9./?=#_-]+$'))"
+    match: "<?(raw_url)>"
+    where: "${hole.raw_url} =~ '^https?://[a-zA-Z0-9./?=#_-]+$'"
     replace: "@link(url: ${hole.raw_url})[ ${hole.raw_url} ]"
 }
 ```
@@ -94,7 +94,7 @@ autolink_raw_urls: {
 ```tmt
 demote_subsections: {
     description: "特定セクション配下の H1 を H2 へ降格"
-    match: "=[ Main ] >> =[ ?(sub_title) ]"
+    match: "=[ Main ] >> =[ <?(sub_title)> ]"
     replace: "==[ ${hole.sub_title} ]"
 }
 ```
@@ -106,7 +106,7 @@ ID のない見出しに、タイトルから自動生成した kebab-case の�
 ```tmt
 auto_heading_ids: {
     description: "見出しにタイトル由来の slug ID を付与"
-    match: "=[ ?(title) ]"
+    match: "=[ <?(title)> ]"
     where: "!has_id()"
     replace: "=[ ${hole.title} ]#( ${hole.title | slug} )"
 }
@@ -124,15 +124,15 @@ Markdown 風の `- ( )` や `- (x)` を、セマンティックな `@task` 要�
 ```tmt
 convert_list_tasks_to_element: {
     description: "リスト形式のタスクを @task 記法へ正規化"
-    match: "- (?(state)) [ ?(body) ]"
-    where: "?(state) in list(' ', '', 'todo')"
+    match: "- (<?(state)>) [ <?(body)> ]"
+    where: "${hole.state} in list(' ', '', 'todo')"
     replace: "@task(todo)[ ${hole.body | trim} ]"
 }
 
 convert_done_tasks_to_element: {
     description: "完了タスクの正規化"
-    match: "- (?(state)) [ ?(body) ]"
-    where: "?(state) in list('x', 'X', 'done')"
+    match: "- (<?(state)>) [ <?(body)> ]"
+    where: "${hole.state} in list('x', 'X', 'done')"
     replace: "@task(done)[ ${hole.body | trim} ]"
 }
 ```
@@ -144,7 +144,7 @@ convert_done_tasks_to_element: {
 ```tmt
 archive_completed_tasks: {
     description: "完了タスクをセクション末尾へ移動"
-    match: "=[ ?(sec) ] >> @task(done)[ ?(body) ]"
+    match: "=[ <?(sec)> ] >> @task(done)[ <?(body)> ]"
     move_to: "=[ ${hole.sec} ] >> ==[ Done Archive ]"
 }
 ```
@@ -158,7 +158,7 @@ archive_completed_tasks: {
 ```tmt
 default_code_language: {
     description: "言語指定のないコードブロックに tomet を指定"
-    match: "```\n?(code)\n```"
+    match: "```\n<?(code)>\n```"
     replace: "```tomet\n${hole.code}\n```"
 }
 ```
@@ -170,13 +170,13 @@ default_code_language: {
 ```tmt
 format_json_blocks: {
     description: "JSON コードブロックを prettier で整形"
-    match: "```json\n?(code)\n```"
+    match: "```json\n<?(code)>\n```"
     replace: "```json\n${hole.code | sh('prettier --parser json')}\n```"
 }
 
 format_rust_blocks: {
     description: "Rust コードブロックを rustfmt で整形"
-    match: "```rust\n?(code)\n```"
+    match: "```rust\n<?(code)>\n```"
     replace: "```rust\n${hole.code | sh('rustfmt --emit stdout')}\n```"
 }
 ```
@@ -190,7 +190,7 @@ format_rust_blocks: {
 ```tmt
 normalize_zenkaku: {
     description: "本文中の全角文字を Python の unicodedata.normalize で変換"
-    match: "?(text)"
+    match: "<?(text)>"
     replace: "${hole.text | py('unicodedata:normalize', 'NFKC')}"
 }
 ```
@@ -202,8 +202,8 @@ normalize_zenkaku: {
 ```tmt
 auto_wrap_terms: {
     description: "キーワードを @term 要素でマークアップ"
-    match: "?(word)"
-    where: "?(word) in list('tomet', 'twrit', 'tandr', 'sisho')"
+    match: "<?(word)>"
+    where: "${hole.word} in list('tomet', 'twrit', 'tandr', 'sisho')"
     replace: "@term[${hole.word}]"
 }
 ```
@@ -217,7 +217,7 @@ auto_wrap_terms: {
 ```tmt
 convert_blockquote_to_callout: {
     description: "GitHub スタイルのアラートを @callout 要素へ変換"
-    match: "> [!?(kind)]\n> ?(body)"
+    match: "> [!<?(kind)>]\n> <?(body)>"
     replace: "@callout(type: ${hole.kind | lower})[ ${hole.body} ]"
 }
 ```
@@ -231,3 +231,40 @@ convert_blockquote_to_callout: {
   ```tmt
   @callout(type: "warning")[ This API is deprecated. ]
   ```
+
+==[ 8. 型付き穴マッチャ (Typed Holes & tomet-type) ]
+
+`tomet-type` クレートの型体系に基づき、値が所定の型に適合する場合にのみマッチする述語マッチャです。
+
+===[ 8.1 セマンティックバージョンの正規化 ]
+
+```tmt
+upgrade_dep_version: {
+    description: "セマンティックバージョンに適合するパッケージの引数を正規化"
+    match: "@pkg(name: <?(name)>, ver: <?version(v)>)"
+    replace: "@pkg(${hole.name}, version: ${hole.v})"
+}
+```
+
+- Before: `@pkg(name: "core", ver: 1.10.0)`
+- After: `@pkg("core", version: 1.10.0)`
+
+===[ 8.2 日付・日時のタイムスタンプ統一 ]
+
+```tmt
+normalize_datetime: {
+    description: "ISO 8601 日付・日時を timestamp 形式に統一"
+    match: "@event(at: <?datetime(d)>, <?rest(r)>)"
+    replace: "@event(timestamp: ${hole.d}, ${hole.r})"
+}
+```
+
+===[ 8.3 非負整数カウントの統一 ]
+
+```tmt
+standardize_metric: {
+    description: "非負整数カウントを total フィールドに統一"
+    match: "@metric(name: <?(name)>, count: <?uint(c)>)"
+    replace: "@metric(${hole.name}, total: ${hole.c})"
+}
+```

@@ -1,8 +1,17 @@
+::config{ env: "production" }
 @meta{ type: "article", title: "Hello Tandr", author: "tefla" }
 
 =[ Introduction ]
 
 Welcome to the new world. Check @link(url: "https://example.com")[ the link ] for more details.
+
+@task("todo")[ Write comprehensive examples for tandr ]
+
+==[ Dependencies & Metrics ]
+
+@dep(name: "tomet-type", ver: 0.5.0)
+@event(at: 2026-11-05, name: "release-v0.5")
+@metric(name: "tests_passed", count: 79)
 
 - regular item
 - another item
